@@ -1,0 +1,9 @@
+product_id,product_name,product_type,annual_return_pct,annual_volatility_pct,liquidity_days,liquidity_level,min_investment_usd,max_allocation_conservador_pct,max_allocation_moderado_pct,max_allocation_agresivo_pct,description
+PROD001,Fondo Conservador A,conservador,3.5,2.5,5,alta,1000,50,40,30,Fondo de bonos de gobierno con baja volatilidad. Ideal para capital de seguridad. Enfocado en preservación de capital con retorno estable.
+PROD002,Fondo Moderado B,moderado,6.5,8.5,7,media,1000,60,60,50,Fondo equilibrado 60% renta fija 40% variable. Balance entre retorno y riesgo. Recomendado para horizonte mediano (2-5 años).
+PROD003,ZEST Deuda Privada,moderado,7.0,6.5,10,media,5000,50,60,40,Fondo de deuda privada con gestores Blackstone y Apollo. Retorno mensual (cupón). Exposición a mercado de crédito corporativo.
+PROD004,Zest Bond Liquid CG2,agresivo,8.5,12.0,15,baja,2000,20,40,60,Nota estructurada autocall con subyacentes NASDAQ (AGEE ANET META NVDA). Riesgo moderado-alto con potencial retorno significativo.
+PROD005,Fondo Agresivo C,agresivo,10.5,15.0,20,baja,2000,10,30,70,Fondo de renta variable con enfoque en tecnología y mercados emergentes. Alto retorno potencial pero con volatilidad significativa.
+PROD006,Fondo Equilibrado B,moderado,6.8,9.5,7,media,1000,55,65,45,Fondo balanceado 50/50 renta fija-variable. Diversificación internacional. Ideal para ahorro de mediano plazo.
+PROD007,Bonos Gobierno +,conservador,4.2,1.5,3,alta,500,60,40,20,Fondo de bonos de gobierno soberano. Riesgo mínimo. Ideal para inversores conservadores con horizonte corto.
+PROD008,Fondo Mixto Premium,moderado,7.2,10.5,10,media,3000,45,55,40,Fondo que combina renta fija de calidad crediticia AAA con acciones de empresas blue-chip. Estrategia de diversificación avanzada.

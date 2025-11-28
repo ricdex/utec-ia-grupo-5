@@ -1,0 +1,70 @@
+{
+  "model": {
+    "provider": "anthropic",
+    "name": "claude-3-5-sonnet-20241022",
+    "description": "Default model configuration",
+    "available_models": {
+      "anthropic": [
+        {
+          "id": "claude-3-5-sonnet-20241022",
+          "name": "Claude 3.5 Sonnet",
+          "description": "Faster, more intelligent model. Best for most tasks.",
+          "cost_tier": "standard"
+        },
+        {
+          "id": "claude-3-5-haiku-20241022",
+          "name": "Claude 3.5 Haiku",
+          "description": "Fastest and most compact model. Good for fast responses.",
+          "cost_tier": "budget"
+        },
+        {
+          "id": "claude-3-opus-20250219",
+          "name": "Claude 3 Opus",
+          "description": "Most powerful model. Best for complex reasoning.",
+          "cost_tier": "premium"
+        }
+      ],
+      "bedrock": [
+        {
+          "id": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+          "name": "Bedrock Claude 3.5 Sonnet",
+          "description": "Sonnet model via AWS Bedrock",
+          "cost_tier": "standard"
+        },
+        {
+          "id": "anthropic.claude-3-5-haiku-20241022-v2:0",
+          "name": "Bedrock Claude 3.5 Haiku",
+          "description": "Haiku model via AWS Bedrock",
+          "cost_tier": "budget"
+        },
+        {
+          "id": "anthropic.claude-opus-20250729-v1:0",
+          "name": "Bedrock Claude 3 Opus",
+          "description": "Opus model via AWS Bedrock",
+          "cost_tier": "premium"
+        }
+      ]
+    }
+  },
+  "database": {
+    "host": "localhost",
+    "name": "finadvisor",
+    "user": "postgres",
+    "password": "postgres",
+    "port": 5432
+  },
+  "api": {
+    "port": 8000,
+    "host": "0.0.0.0",
+    "debug": false
+  },
+  "rag": {
+    "enabled": true,
+    "embedding_dimension": 384,
+    "similarity_threshold": 0.3
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "clients": [
+    {
+      "client_id": "CLI001",
+      "name": "Carlos Martínez",
+      "email": "carlos.martinez@example.com",
+      "risk_profile": "conservador",
+      "investment_horizon_months": 24,
+      "available_amount_usd": 25000,
+      "liquidity_preference": "media",
+      "target_return_pct": 5.0,
+      "max_aggressive_pct": 20,
+      "goals": ["ahorro retiro", "estabilidad"],
+      "portfolio": [],
+      "last_recommendation": null
+    },
+    {
+      "client_id": "CLI002",
+      "name": "María García",
+      "email": "maria.garcia@example.com",
+      "risk_profile": "moderado",
+      "investment_horizon_months": 36,
+      "available_amount_usd": 50000,
+      "liquidity_preference": "media",
+      "target_return_pct": 8.0,
+      "max_aggressive_pct": 40,
+      "goals": ["crecimiento", "educación hijos"],
+      "portfolio": [],
+      "last_recommendation": null
+    },
+    {
+      "client_id": "CLI003",
+      "name": "Juan López",
+      "email": "juan.lopez@example.com",
+      "risk_profile": "agresivo",
+      "investment_horizon_months": 60,
+      "available_amount_usd": 75000,
+      "liquidity_preference": "baja",
+      "target_return_pct": 12.0,
+      "max_aggressive_pct": 60,
+      "goals": ["maximizar retorno", "crear riqueza"],
+      "portfolio": [],
+      "last_recommendation": null
+    },
+    {
+      "client_id": "CLI004",
+      "name": "Ana Rodríguez",
+      "email": "ana.rodriguez@example.com",
+      "risk_profile": "conservador",
+      "investment_horizon_months": 12,
+      "available_amount_usd": 15000,
+      "liquidity_preference": "alta",
+      "target_return_pct": 3.5,
+      "max_aggressive_pct": 10,
+      "goals": ["emergencia", "liquidez"],
+      "portfolio": [],
+      "last_recommendation": null
+    }
+  ]
+}
