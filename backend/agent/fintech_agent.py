@@ -190,7 +190,15 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
 
             elif response.stop_reason == "end_turn":
                 # Agent finished reasoning
-                final_response = response.content[0].text if response.content else ""
+                final_response = ""
+                if response.content:
+                    content_block = response.content[0]
+                    try:
+                        # Try object attribute first (Anthropic)
+                        final_response = content_block.text
+                    except AttributeError:
+                        # Fallback to dict access (Ollama/Bedrock)
+                        final_response = content_block.get("text", "")
                 self.memory.add_assistant_message(final_response)
                 return final_response
             else:
