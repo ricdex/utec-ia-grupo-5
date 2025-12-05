@@ -202,6 +202,37 @@ class RAGManager:
         self.extractor = PDFExtractor()
         self.chunker = DocumentChunker()
 
+    def add_document(self, product_data: Dict) -> None:
+        """
+        Add a product document directly to RAG (from CSV or structured data)
+        Used by seed_rag.py script for initialization
+
+        Args:
+            product_data: Dictionary containing product info with 'text' field
+        """
+        product_id = product_data.get('product_id', 'unknown')
+        product_name = product_data.get('product_name', 'Unknown Product')
+        text = product_data.get('text', '')
+
+        # Create document ID
+        doc_type = product_data.get('document_type', 'info')
+        doc_id = f"{product_id}_{doc_type}"
+        doc_hash = hashlib.md5(text.encode()).hexdigest()
+
+        # Create document
+        document = Document(
+            doc_id=doc_id,
+            product_name=product_name,
+            chunk_index=0,
+            content=text,
+            metadata={k: v for k, v in product_data.items() if k != 'text'},
+            hash=doc_hash
+        )
+
+        # Generate embedding and store
+        embedding = SimpleEmbedding.generate_embedding(text)
+        self.storage.store_document(document, embedding)
+
     def ingest_product_document(
         self,
         pdf_content: bytes,

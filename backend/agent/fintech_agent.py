@@ -9,14 +9,14 @@ from typing import Dict, List, Tuple, Optional
 from datetime import datetime
 from dataclasses import asdict
 
-from memory_manager import MemoryManager
-from rag_manager import RAGManager, RAGProductDatabase
-from ..utils.finance_calc import FinanceCalculator, SimulationEngine, ProductAllocation
-from ..utils.guardrails import FinancialGuardrails, GuardrailViolation
-from ..utils.config import get_config
-from ..utils.llm_client import LLMClientFactory
-from ..mcp_servers.postgres_server import PostgreSQLServer
-from ..mcp_servers.market_api_server import MarketAPIServer
+from agent.memory_manager import MemoryManager
+from agent.rag_manager import RAGManager, RAGProductDatabase
+from utils.finance_calc import FinanceCalculator, SimulationEngine, ProductAllocation
+from utils.guardrails import FinancialGuardrails, GuardrailViolation
+from utils.config import get_config
+from utils.llm_client import LLMClientFactory
+from mcp_servers.postgres_server import PostgreSQLServer
+from mcp_servers.market_api_server import MarketAPIServer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -162,7 +162,7 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
             iteration += 1
             logger.info(f"Iteration {iteration}: Calling LLM")
 
-            response = self.llm_client.messages.create(
+            response = self.llm_client.create_message(
                 model=self.model,
                 max_tokens=2048,
                 system=self.system_prompt,

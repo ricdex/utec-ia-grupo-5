@@ -263,16 +263,16 @@ if st.session_state.client_profile:
 
     st.sidebar.metric(
         "Monto Disponible",
-        f"USD {profile.get('available_amount_usd', 0):,.0f}"
+        f"USD {(profile.get('available_amount_usd') or 0):,.0f}"
     )
 
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        st.sidebar.write(f"**Perfil**: {profile.get('risk_profile', 'N/A')}")
+        st.sidebar.write(f"**Perfil**: {profile.get('risk_profile') or 'N/A'}")
     with col2:
-        st.sidebar.write(f"**Horizonte**: {profile.get('investment_horizon_months', 'N/A')}m")
+        st.sidebar.write(f"**Horizonte**: {profile.get('investment_horizon_months') or 'N/A'}m")
 
-    st.sidebar.write(f"**Meta Retorno**: {profile.get('target_return_pct', 0):.1f}%")
+    st.sidebar.write(f"**Meta Retorno**: {(profile.get('target_return_pct') or 0):.1f}%")
 
 # Main content
 st.markdown("<div class='main-header'><h1>💰 FinAdvisor</h1><p>Asesor Financiero Impulsado por IA</p></div>", unsafe_allow_html=True)
@@ -298,10 +298,19 @@ with tab1:
             else:
                 st.chat_message("assistant").write(msg["content"])
 
-    # Chat input
-    user_input = st.chat_input("Escribe tu pregunta o comentario...")
+    # Chat input (using form since st.chat_input() can't be in tabs)
+    with st.form(key="chat_form", clear_on_submit=True):
+        col1, col2 = st.columns([6, 1])
+        with col1:
+            user_input = st.text_input(
+                "Tu mensaje:",
+                placeholder="Escribe tu pregunta o comentario...",
+                label_visibility="collapsed"
+            )
+        with col2:
+            submit_button = st.form_submit_button("Enviar", use_container_width=True)
 
-    if user_input:
+    if submit_button and user_input:
         # Add user message to history
         st.session_state.messages.append({
             "role": "user",
@@ -345,7 +354,7 @@ with tab2:
         with col1:
             amount = st.number_input(
                 "Monto a Invertir (USD)",
-                value=profile.get("available_amount_usd", 50000),
+                value=profile.get("available_amount_usd") or 50000,
                 min_value=1000,
                 step=5000
             )
@@ -353,20 +362,20 @@ with tab2:
             risk_profile = st.selectbox(
                 "Perfil de Riesgo",
                 ["conservador", "moderado", "agresivo"],
-                index=["conservador", "moderado", "agresivo"].index(profile.get("risk_profile", "moderado"))
+                index=["conservador", "moderado", "agresivo"].index(profile.get("risk_profile") or "moderado")
             )
 
         with col2:
             months = st.number_input(
                 "Horizonte de Inversión (meses)",
-                value=profile.get("investment_horizon_months", 24),
+                value=profile.get("investment_horizon_months") or 24,
                 min_value=6,
                 step=6
             )
 
             target_return = st.number_input(
                 "Retorno Objetivo Anual (%)",
-                value=profile.get("target_return_pct", 8.0),
+                value=profile.get("target_return_pct") or 8.0,
                 min_value=0.0,
                 max_value=50.0,
                 step=0.5
