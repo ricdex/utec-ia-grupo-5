@@ -9,6 +9,10 @@ import json
 from datetime import datetime
 import os
 from typing import Optional, Dict, List
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Page config
 st.set_page_config(
@@ -41,6 +45,7 @@ st.markdown("""
     }
     .warning-box {
         background-color: #fff3cd;
+        color: #856404;
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 5px solid #ffc107;
@@ -48,6 +53,7 @@ st.markdown("""
     }
     .success-box {
         background-color: #d4edda;
+        color: #155724;
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 5px solid #28a745;
@@ -82,10 +88,13 @@ def call_api(method: str, endpoint: str, data: Optional[Dict] = None) -> Optiona
     try:
         url = f"{st.session_state.api_endpoint}{endpoint}"
 
+        # Get timeout from environment variable (default 30 seconds)
+        timeout = int(os.getenv("API_TIMEOUT", "30"))
+
         if method.upper() == "GET":
-            response = requests.get(url, timeout=30)
+            response = requests.get(url, timeout=timeout)
         elif method.upper() == "POST":
-            response = requests.post(url, json=data, timeout=30)
+            response = requests.post(url, json=data, timeout=timeout)
         else:
             st.error(f"Unsupported HTTP method: {method}")
             return None
@@ -100,7 +109,8 @@ def call_api(method: str, endpoint: str, data: Optional[Dict] = None) -> Optiona
         st.error(f"❌ No se puede conectar a la API en {st.session_state.api_endpoint}")
         return None
     except requests.exceptions.Timeout:
-        st.error("⏱️ Timeout de la API (>30s)")
+        timeout = int(os.getenv("API_TIMEOUT", "30"))
+        st.error(f"⏱️ Timeout de la API (>{timeout}s)")
         return None
     except Exception as e:
         st.error(f"Error: {str(e)}")

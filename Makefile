@@ -94,9 +94,15 @@ redis-cli:
 	docker-compose exec redis redis-cli
 
 ollama-pull:
-	@echo "$(CYAN)Pulling Llama 3.2 model...$(NC)"
-	docker-compose exec ollama ollama pull llama2
-	@echo "$(GREEN)✓ Llama model ready$(NC)"
+	@echo "$(CYAN)Pulling model from .env (MODEL_NAME)...$(NC)"
+	@if [ -f .env ]; then \
+		export $$(cat .env | grep -v '^#' | grep MODEL_NAME | xargs) && \
+		docker-compose exec ollama ollama pull $$MODEL_NAME && \
+		echo "$(GREEN)✓ Model $$MODEL_NAME ready$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ .env not found, pulling default llama2$(NC)" && \
+		docker-compose exec ollama ollama pull llama2; \
+	fi
 
 ollama-list:
 	@echo "$(CYAN)Available Ollama models...$(NC)"

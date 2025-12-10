@@ -10,6 +10,9 @@ from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
 
+# Get timeout from environment variable (default 30 seconds)
+API_TIMEOUT = int(os.getenv("API_TIMEOUT", "30"))
+
 
 class LLMProvider(ABC):
     """Abstract base class for LLM providers"""
@@ -164,7 +167,7 @@ class OllamaLLMProvider(LLMProvider):
                     "system": system,
                     "stream": False
                 },
-                timeout=60
+                timeout=API_TIMEOUT
             )
 
             if response.status_code == 200:

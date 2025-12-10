@@ -6,6 +6,7 @@ Provides tools for querying products, clients, and portfolio data
 import json
 import logging
 from typing import Any
+from decimal import Decimal
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import mcp.server.stdio
@@ -22,6 +23,17 @@ class PostgreSQLServer:
         self.db_password = db_password
         self.db_port = db_port
         self.connection = None
+
+    @staticmethod
+    def _convert_decimals(data):
+        """Convert Decimal values to float for JSON compatibility"""
+        if isinstance(data, dict):
+            return {k: PostgreSQLServer._convert_decimals(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [PostgreSQLServer._convert_decimals(item) for item in data]
+        elif isinstance(data, Decimal):
+            return float(data)
+        return data
 
     def connect(self):
         """Establish database connection"""
@@ -74,7 +86,8 @@ class PostgreSQLServer:
             results = cursor.fetchall()
             cursor.close()
 
-            return [dict(row) for row in results]
+            # Convert Decimal to float for compatibility
+            return [self._convert_decimals(dict(row)) for row in results]
         except psycopg2.Error as e:
             logger.error(f"Query error: {e}")
             return []
@@ -88,7 +101,7 @@ class PostgreSQLServer:
             result = cursor.fetchone()
             cursor.close()
 
-            return dict(result) if result else {}
+            return self._convert_decimals(dict(result)) if result else {}
         except psycopg2.Error as e:
             logger.error(f"Error getting client profile: {e}")
             return {}
@@ -107,7 +120,7 @@ class PostgreSQLServer:
             results = cursor.fetchall()
             cursor.close()
 
-            return [dict(row) for row in results]
+            return [self._convert_decimals(dict(row)) for row in results]
         except psycopg2.Error as e:
             logger.error(f"Error getting portfolio: {e}")
             return []
