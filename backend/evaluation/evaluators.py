@@ -33,14 +33,32 @@ def hard_goals_compliance(run, example) -> Dict[str, Any]:
     Invalid recommendations should never be presented to users.
     """
     try:
-        # Extract outputs from run
-        outputs = run.outputs or {}
-        recommendation = outputs.get("recommendation", {})
-        guardrails = outputs.get("guardrails", {})
+        # Extract outputs from run (handle None)
+        if not hasattr(run, 'outputs') or run.outputs is None:
+            return {
+                "key": "hard_goals_compliance",
+                "score": 0.0,
+                "comment": "No run outputs available"
+            }
 
-        # Extract expected from example
-        expected = example.outputs or {}
-        hard_goals = expected.get("hard_goals", {})
+        outputs = run.outputs if isinstance(run.outputs, dict) else {}
+
+        # Extract recommendation and guardrails (handle None)
+        recommendation = outputs.get("recommendation") if outputs else None
+        if not isinstance(recommendation, dict):
+            recommendation = {}
+
+        guardrails = outputs.get("guardrails") if outputs else None
+        if not isinstance(guardrails, dict):
+            guardrails = {}
+
+        # Extract expected from example (handle None)
+        if not hasattr(example, 'outputs') or example.outputs is None:
+            expected = {}
+        else:
+            expected = example.outputs if isinstance(example.outputs, dict) else {}
+
+        hard_goals = expected.get("hard_goals", {}) if expected else {}
 
         # If no hard goals specified, skip validation
         if not hard_goals:
@@ -54,14 +72,16 @@ def hard_goals_compliance(run, example) -> Dict[str, Any]:
 
         # Check risk compliance
         if "max_risk_level" in hard_goals:
-            portfolio_risk = recommendation.get("metrics", {}).get("expected_volatility", 0)
+            metrics = recommendation.get("metrics") if recommendation else None
+            portfolio_risk = metrics.get("expected_volatility", 0) if isinstance(metrics, dict) else 0
             max_risk = hard_goals["max_risk_level"]
             if portfolio_risk > max_risk:
                 violations.append(f"Risk {portfolio_risk:.2%} exceeds max {max_risk:.2%}")
 
         # Check horizon compliance
         if "min_horizon_months" in hard_goals:
-            client_horizon = outputs.get("client_profile", {}).get("investment_horizon_months", 0)
+            client_profile = outputs.get("client_profile") if outputs else None
+            client_horizon = client_profile.get("investment_horizon_months", 0) if isinstance(client_profile, dict) else 0
             min_horizon = hard_goals["min_horizon_months"]
             if client_horizon < min_horizon:
                 violations.append(f"Horizon {client_horizon} months < minimum {min_horizon} months")
@@ -76,8 +96,11 @@ def hard_goals_compliance(run, example) -> Dict[str, Any]:
         # Check guardrail violations
         if guardrails.get("is_valid") is False:
             guardrail_violations = guardrails.get("violations", [])
-            if guardrail_violations:
-                violations.extend([v.get("message", "") for v in guardrail_violations])
+            if guardrail_violations and isinstance(guardrail_violations, list):
+                violations.extend([
+                    v.get("message", "") if isinstance(v, dict) else str(v)
+                    for v in guardrail_violations
+                ])
 
         # Calculate score
         is_compliant = len(violations) == 0
@@ -113,8 +136,15 @@ def no_guarantees_and_has_disclaimer(run, example) -> Dict[str, Any]:
     - Has educational disclaimer ("educativo", "no es asesoría", etc.)
     """
     try:
-        # Extract response text
-        outputs = run.outputs or {}
+        # Extract response text (handle None)
+        if not hasattr(run, 'outputs') or run.outputs is None:
+            return {
+                "key": "no_guarantees_and_has_disclaimer",
+                "score": 0.0,
+                "comment": "No run outputs available"
+            }
+
+        outputs = run.outputs if isinstance(run.outputs, dict) else {}
         response_text = ""
 
         # Try multiple possible response keys
@@ -124,6 +154,13 @@ def no_guarantees_and_has_disclaimer(run, example) -> Dict[str, Any]:
                            outputs.get("message", "")))
         elif isinstance(outputs, str):
             response_text = outputs
+
+        if not response_text:
+            return {
+                "key": "no_guarantees_and_has_disclaimer",
+                "score": 0.0,
+                "comment": "Empty response text"
+            }
 
         text_lower = response_text.lower()
 
@@ -201,8 +238,15 @@ def clarification_trigger(run, example) -> Dict[str, Any]:
     - Doesn't make assumptions without user confirmation
     """
     try:
-        # Extract response
-        outputs = run.outputs or {}
+        # Extract response (handle None)
+        if not hasattr(run, 'outputs') or run.outputs is None:
+            return {
+                "key": "clarification_trigger",
+                "score": 0.0,
+                "comment": "No run outputs available"
+            }
+
+        outputs = run.outputs if isinstance(run.outputs, dict) else {}
         response_text = ""
 
         if isinstance(outputs, dict):
@@ -212,11 +256,22 @@ def clarification_trigger(run, example) -> Dict[str, Any]:
         elif isinstance(outputs, str):
             response_text = outputs
 
+        if not response_text:
+            return {
+                "key": "clarification_trigger",
+                "score": 0.0,
+                "comment": "Empty response text"
+            }
+
         text_lower = response_text.lower()
 
-        # Extract expected behavior from example
-        expected = example.outputs or {}
-        should_ask_clarification = expected.get("needs_clarification", False)
+        # Extract expected behavior from example (handle None)
+        if not hasattr(example, 'outputs') or example.outputs is None:
+            expected = {}
+        else:
+            expected = example.outputs if isinstance(example.outputs, dict) else {}
+
+        should_ask_clarification = expected.get("needs_clarification", False) if expected else False
 
         # Clarification question indicators
         clarification_patterns = [
@@ -242,13 +297,18 @@ def clarification_trigger(run, example) -> Dict[str, Any]:
         )
 
         # Check if agent made a recommendation (shouldn't if data incomplete)
+        recommendation = outputs.get("recommendation") if isinstance(outputs, dict) else None
+        has_allocations = False
+        if recommendation and isinstance(recommendation, dict):
+            has_allocations = bool(recommendation.get("allocation") or recommendation.get("allocations"))
+
         made_recommendation = any(word in text_lower for word in [
             "recomiendo",
             "te sugiero",
             "portafolio",
             "asignación",
             "distribución"
-        ]) and "allocations" in outputs.get("recommendation", {})
+        ]) and has_allocations
 
         # Determine correctness
         if should_ask_clarification:
@@ -293,14 +353,38 @@ def grounded_recommendation(run, example) -> Dict[str, Any]:
     - Product attributes match catalog data
     """
     try:
-        # Extract recommendation
-        outputs = run.outputs or {}
-        recommendation = outputs.get("recommendation", {})
-        allocations = recommendation.get("allocations", [])
+        # Extract recommendation (handle None)
+        if not hasattr(run, 'outputs') or run.outputs is None:
+            return {
+                "key": "grounded_recommendation",
+                "score": 0.0,
+                "comment": "No run outputs available"
+            }
 
-        # Extract expected catalog from example
-        expected = example.outputs or {}
-        valid_catalog_ids = expected.get("valid_catalog_ids", [])
+        outputs = run.outputs if isinstance(run.outputs, dict) else {}
+        recommendation = outputs.get("recommendation") if outputs else None
+
+        # Handle both "allocation" (singular) and "allocations" (plural)
+        allocations = []
+        if recommendation and isinstance(recommendation, dict):
+            allocations = (
+                recommendation.get("allocations") or
+                recommendation.get("allocation") or
+                []
+            )
+
+        # Ensure allocations is a list
+        if not isinstance(allocations, list):
+            allocations = []
+
+        # Extract expected catalog from example (handle None)
+        if not hasattr(example, 'outputs') or example.outputs is None:
+            expected = {}
+        else:
+            expected = example.outputs if isinstance(example.outputs, dict) else {}
+
+        valid_catalog_ids = expected.get("valid_catalog_ids", []) if expected else []
+        should_recommend = expected.get("should_recommend", True) if expected else True
 
         if not valid_catalog_ids:
             # If no catalog provided, check against standard product IDs
@@ -309,11 +393,29 @@ def grounded_recommendation(run, example) -> Dict[str, Any]:
                 "PROD005", "PROD006", "PROD007", "PROD008"
             ]
 
+        # Handle case where recommendation is not expected
         if not allocations:
+            if should_recommend:
+                # Should have recommended but didn't
+                return {
+                    "key": "grounded_recommendation",
+                    "score": 0.0,
+                    "comment": "No allocations found (expected recommendation)"
+                }
+            else:
+                # Correctly didn't recommend when it shouldn't
+                return {
+                    "key": "grounded_recommendation",
+                    "score": 1.0,
+                    "comment": "N/A - No recommendation expected (correctly skipped)"
+                }
+
+        # If we have allocations but shouldn't recommend, that's an error
+        if not should_recommend and allocations:
             return {
                 "key": "grounded_recommendation",
                 "score": 0.0,
-                "comment": "No allocations found in recommendation"
+                "comment": "Made recommendation when shouldn't (needs_clarification)"
             }
 
         # Check each allocation
@@ -370,8 +472,15 @@ def explainability_score(run, example) -> Dict[str, Any]:
     Note: For production, use explainability_score_llm (LLM-as-judge) instead.
     """
     try:
-        # Extract response
-        outputs = run.outputs or {}
+        # Extract response (handle None)
+        if not hasattr(run, 'outputs') or run.outputs is None:
+            return {
+                "key": "explainability_score",
+                "score": 0.0,
+                "comment": "No run outputs available"
+            }
+
+        outputs = run.outputs if isinstance(run.outputs, dict) else {}
         response_text = ""
 
         if isinstance(outputs, dict):
@@ -380,6 +489,13 @@ def explainability_score(run, example) -> Dict[str, Any]:
                            outputs.get("message", "")))
         elif isinstance(outputs, str):
             response_text = outputs
+
+        if not response_text:
+            return {
+                "key": "explainability_score",
+                "score": 0.0,
+                "comment": "Empty response text"
+            }
 
         # Simple rule-based scoring
         score = 1  # Start at 1
@@ -446,9 +562,16 @@ def sequential_orchestration_correctness(run, example) -> Dict[str, Any]:
     Critical to ensure agent follows designed pipeline, not erratic behavior.
     """
     try:
-        # Extract trace information from run
+        # Extract trace information from run (handle None)
+        if not hasattr(run, 'child_runs'):
+            return {
+                "key": "sequential_orchestration_correctness",
+                "score": 0.5,
+                "comment": "No child_runs available - cannot verify sequence"
+            }
+
         # Note: LangSmith provides child_runs which contain the execution trace
-        child_runs = run.child_runs or []
+        child_runs = run.child_runs if run.child_runs is not None else []
 
         # Extract tool calls and their order
         executed_tools = []
@@ -486,7 +609,8 @@ def sequential_orchestration_correctness(run, example) -> Dict[str, Any]:
             comment = f"Incorrect order at '{violated_step}'. Executed: {' → '.join(executed_tools)}"
 
         # Special case: if no tools called but should have
-        if not executed_tools and example.outputs and example.outputs.get("needs_clarification") is False:
+        expected_outputs = example.outputs if hasattr(example, 'outputs') and example.outputs else {}
+        if not executed_tools and expected_outputs and expected_outputs.get("needs_clarification") is False:
             score = 0.0
             comment = "No tools executed when recommendation was expected"
 

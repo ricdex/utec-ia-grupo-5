@@ -83,14 +83,9 @@ def target_function(inputs: Dict[str, Any]) -> Dict[str, Any]:
     # Get response
     response = agent.chat(message)
 
-    # Try to extract recommendation if it was made
-    recommendation = None
-    guardrails = None
-
-    # Check if memory has a recommendation
-    memory_dict = agent.memory.to_dict()
-    if "ltm" in memory_dict and "last_recommendation" in memory_dict["ltm"]:
-        recommendation = memory_dict["ltm"]["last_recommendation"]
+    # Extract recommendation and guardrails from agent (stored during tool execution)
+    recommendation = agent.last_recommendation
+    guardrails = agent.last_guardrails
 
     return {
         "response": response,
