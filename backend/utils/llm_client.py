@@ -3,6 +3,7 @@ LLM Client abstraction layer
 Supports multiple LLM providers: Anthropic, AWS Bedrock, and Local Ollama
 """
 
+import json
 import logging
 import os
 from typing import Dict, List, Optional, Any
@@ -112,6 +113,145 @@ class BedrockLLMProvider(LLMProvider):
         return BedrockResponse(result)
 
 
+class OpenAILLMProvider(LLMProvider):
+    """OpenAI API provider with tool calling support"""
+
+    def __init__(self, api_key: Optional[str] = None):
+        from openai import OpenAI
+
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+
+        self.client = OpenAI(api_key=self.api_key)
+        logger.info("Initialized OpenAI LLM provider")
+
+    def create_message(
+        self,
+        model: str,
+        max_tokens: int,
+        system: str,
+        messages: List[Dict],
+        tools: Optional[List[Dict]] = None
+    ) -> Any:
+        """Create message with OpenAI API"""
+
+        # Convert messages to OpenAI format
+        openai_messages = [{"role": "system", "content": system}]
+
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+
+            # Handle tool results (Anthropic format → OpenAI format)
+            if isinstance(content, list):
+                # Check if it's assistant message with tool_use blocks
+                if role == "assistant":
+                    # Extract tool calls from content blocks
+                    tool_calls = []
+                    text_content = None
+
+                    for block in content:
+                        block_type = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+                        if block_type == "tool_use":
+                            tool_calls.append({
+                                "id": block.get("id") if isinstance(block, dict) else block.id,
+                                "type": "function",
+                                "function": {
+                                    "name": block.get("name") if isinstance(block, dict) else block.name,
+                                    "arguments": json.dumps(block.get("input") if isinstance(block, dict) else block.input)
+                                }
+                            })
+                        elif block_type == "text":
+                            text_content = block.get("text") if isinstance(block, dict) else block.text
+
+                    # Add assistant message with tool calls
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": text_content
+                    }
+                    if tool_calls:
+                        assistant_msg["tool_calls"] = tool_calls
+                    openai_messages.append(assistant_msg)
+
+                # Check if it's user message with tool_result blocks
+                elif role == "user":
+                    # Convert each tool_result to OpenAI format (role="tool")
+                    for block in content:
+                        if block.get("type") == "tool_result":
+                            openai_messages.append({
+                                "role": "tool",
+                                "tool_call_id": block.get("tool_use_id"),
+                                "content": block.get("content")
+                            })
+                continue
+
+            openai_messages.append({
+                "role": role,
+                "content": content
+            })
+
+        # Convert tools to OpenAI format if provided
+        openai_tools = None
+        if tools:
+            openai_tools = []
+            for tool in tools:
+                openai_tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "parameters": tool["input_schema"]
+                    }
+                })
+
+        try:
+            kwargs = {
+                "model": model,
+                "messages": openai_messages,
+                "max_tokens": max_tokens
+            }
+
+            if openai_tools:
+                kwargs["tools"] = openai_tools
+                kwargs["tool_choice"] = "auto"
+
+            response = self.client.chat.completions.create(**kwargs)
+
+            # Wrap in Anthropic-like response for compatibility
+            class OpenAIResponse:
+                def __init__(self, openai_response):
+                    message = openai_response.choices[0].message
+                    self.content = []
+
+                    # Add text content
+                    if message.content:
+                        self.content.append({
+                            "type": "text",
+                            "text": message.content
+                        })
+
+                    # Add tool calls
+                    if message.tool_calls:
+                        for tool_call in message.tool_calls:
+                            import json
+                            self.content.append({
+                                "type": "tool_use",
+                                "id": tool_call.id,
+                                "name": tool_call.function.name,
+                                "input": json.loads(tool_call.function.arguments)
+                            })
+                        self.stop_reason = "tool_use"
+                    else:
+                        self.stop_reason = "end_turn"
+
+            return OpenAIResponse(response)
+
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            raise
+
+
 class OllamaLLMProvider(LLMProvider):
     """Local Ollama provider for running models locally"""
 
@@ -154,7 +294,7 @@ class OllamaLLMProvider(LLMProvider):
         # Add system message as first user message if needed
         for msg in messages:
             ollama_messages.append({
-                "role": msg.get("role", "user"),
+                "role": msg.get("role"),
                 "content": msg.get("content", "")
             })
 
@@ -197,7 +337,8 @@ class LLMClientFactory:
     _providers = {
         "anthropic": AnthropicLLMProvider,
         "bedrock": BedrockLLMProvider,
-        "local": OllamaLLMProvider
+        "openai": OpenAILLMProvider,
+        "local": OllamaLLMProvider  # Legacy - use openai instead
     }
 
     @staticmethod
@@ -233,7 +374,13 @@ class LLMClientFactory:
 
         provider = config.get_model_provider()
 
-        if provider == "local":
+        if provider == "openai":
+            return LLMClientFactory.create_client(
+                "openai",
+                api_key=os.getenv("OPENAI_API_KEY")
+            )
+        elif provider == "local":
+            # Legacy - kept for backward compatibility
             return LLMClientFactory.create_client(
                 "local",
                 base_url=config.get_ollama_base_url()
@@ -254,6 +401,7 @@ __all__ = [
     "LLMProvider",
     "AnthropicLLMProvider",
     "BedrockLLMProvider",
+    "OpenAILLMProvider",
     "OllamaLLMProvider",
     "LLMClientFactory"
 ]

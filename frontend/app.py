@@ -159,13 +159,12 @@ def get_available_models() -> Dict:
     if response:
         return response
     return {
-        "current": {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022"},
+        "current": {"provider": "openai", "model": "gpt-4o-mini"},
         "available_providers": {
-            "anthropic": [
-                {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet"},
-                {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku"},
-                {"id": "claude-3-opus-20250219", "name": "Claude 3 Opus"}
+            "openai": [
+                {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "description": "Fast and cost-effective"}
             ],
+            "anthropic": [],
             "bedrock": []
         }
     }
@@ -204,22 +203,48 @@ st.sidebar.markdown("## 🤖 Modelo IA")
 
 if st.session_state.available_models:
     models_info = st.session_state.available_models
-    current_model = models_info.get("current", {}).get("model", "claude-3-5-sonnet-20241022")
+    current_provider = models_info.get("current", {}).get("provider", "openai")
+    current_model = models_info.get("current", {}).get("model", "gpt-4o-mini")
 
     # Show current model
-    st.sidebar.info(f"**Modelo actual**: {current_model.split('/')[-1]}")
+    st.sidebar.info(f"**Modelo actual**: {current_model}")
 
-    # Create model options
-    anthropic_models = models_info.get("available_providers", {}).get("anthropic", [])
-    bedrock_models = models_info.get("available_providers", {}).get("bedrock", [])
+    # Get all available providers
+    available_providers = models_info.get("available_providers", {})
+    local_models = available_providers.get("local", [])
+    openai_models = available_providers.get("openai", [])
+    anthropic_models = available_providers.get("anthropic", [])
+    bedrock_models = available_providers.get("bedrock", [])
+
+    # Build provider list
+    provider_options = []
+    if openai_models:
+        provider_options.append("openai")
+    if local_models:
+        provider_options.append("local")
+    if anthropic_models:
+        provider_options.append("anthropic")
+    if bedrock_models:
+        provider_options.append("bedrock")
+
+    # Default to current provider or first available
+    default_index = 0
+    if current_provider in provider_options:
+        default_index = provider_options.index(current_provider)
 
     selected_provider = st.sidebar.selectbox(
         "Proveedor",
-        ["anthropic", "bedrock"] if bedrock_models else ["anthropic"],
-        help="Elige entre Anthropic (Claude) o AWS Bedrock"
+        provider_options,
+        index=default_index,
+        help="Elige el proveedor de IA (OpenAI=GPT models, Anthropic=Claude, Bedrock=AWS)"
     )
 
-    if selected_provider == "anthropic":
+    # Get models for selected provider
+    if selected_provider == "local":
+        models_list = local_models
+    elif selected_provider == "openai":
+        models_list = openai_models
+    elif selected_provider == "anthropic":
         models_list = anthropic_models
     else:
         models_list = bedrock_models
@@ -364,9 +389,9 @@ with tab2:
         with col1:
             amount = st.number_input(
                 "Monto a Invertir (USD)",
-                value=profile.get("available_amount_usd") or 50000,
-                min_value=1000,
-                step=5000
+                value=float(profile.get("available_amount_usd") or 50000),
+                min_value=1000.0,
+                step=5000.0
             )
 
             risk_profile = st.selectbox(
@@ -378,14 +403,14 @@ with tab2:
         with col2:
             months = st.number_input(
                 "Horizonte de Inversión (meses)",
-                value=profile.get("investment_horizon_months") or 24,
+                value=int(profile.get("investment_horizon_months") or 24),
                 min_value=6,
                 step=6
             )
 
             target_return = st.number_input(
                 "Retorno Objetivo Anual (%)",
-                value=profile.get("target_return_pct") or 8.0,
+                value=float(profile.get("target_return_pct") or 8.0),
                 min_value=0.0,
                 max_value=50.0,
                 step=0.5

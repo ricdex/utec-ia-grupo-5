@@ -136,30 +136,31 @@ class FinanceCalculator:
     def diversify_portfolio(
         total_amount: float,
         eligible_products: List[Dict],
-        client_risk_profile: str,
-        max_aggressive_pct: int
+        client_risk_profile: str
     ) -> List[ProductAllocation]:
         """
         Create diversified portfolio allocation based on risk profile
+        Allocations are aligned with guardrails and hardcoded per profile
         Returns list of ProductAllocation objects
         """
 
         # Define allocation percentages by risk profile
+        # Aligned with guardrails: conservador gets 0% aggressive
         profile_allocations = {
             "conservador": {
                 "conservador": 70,
-                "moderado": 20,
-                "agresivo": min(10, max_aggressive_pct)
+                "moderado": 30,
+                "agresivo": 0  # Conservative profiles: NO aggressive products
             },
             "moderado": {
-                "conservador": 40,
-                "moderado": 40,
-                "agresivo": min(20, max_aggressive_pct)
+                "conservador": 30,
+                "moderado": 50,
+                "agresivo": 20
             },
             "agresivo": {
-                "conservador": 20,
+                "conservador": 10,
                 "moderado": 30,
-                "agresivo": min(50, max_aggressive_pct)
+                "agresivo": 60
             }
         }
 

@@ -162,7 +162,8 @@ class RAGStorage:
     """Storage backend for documents and embeddings"""
 
     def __init__(self):
-        # In-memory storage for demo, replace with DynamoDB in production
+        # In-memory storage for RAG documents
+        # Products are loaded from CSV and stored here for fast semantic search
         self.documents: Dict[str, Document] = {}
         self.embeddings: Dict[str, List[float]] = {}
 

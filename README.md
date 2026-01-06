@@ -3,9 +3,10 @@
 ## 🎯 Propósito
 
 FinAdvisor es un **agente autónomo de recomendación de portafolios** que utiliza:
-- Razonamiento agentico con LLM (Claude/Ollama)
-- Memoria de conversación (STM) y perfil (LTM)
-- Base de datos vectorial (RAG) para búsqueda semántica
+- Razonamiento agentico con LLM (**OpenAI** en local, **Bedrock/Claude** en AWS)
+- **Tool calling nativo** para consultar base de datos y construir portafolios
+- Memoria de conversación (STM en Redis) y perfil (LTM en PostgreSQL)
+- Base de datos relacional con productos reales
 - Validación de restricciones financieras (guardrails)
 
 Genera recomendaciones personalizadas de inversión basadas en el perfil del cliente, monto disponible, horizonte temporal y tolerancia al riesgo.
@@ -26,7 +27,7 @@ Genera recomendaciones personalizadas de inversión basadas en el perfil del cli
 │  • Chat con agente IA                                            │
 │  • Formulario de recomendación                                   │
 │  • Visualización de portafolio                                   │
-│  • Selector de modelo (Ollama/Bedrock)                           │
+│  • Selector de modelo (OpenAI/Bedrock/Anthropic)                 │
 └────────────────────────┬────────────────────────────────────────┘
                          │ JSON/REST
 ┌────────────────────────▼────────────────────────────────────────┐
@@ -45,9 +46,9 @@ Genera recomendaciones personalizadas de inversión basadas en el perfil del cli
 │   RAG    │  │  FinAdvisor    │  │PostgreSQL│  │  Config &  │
 │Vector DB │  │    Agent       │  │   BD     │  │   Models   │
 ├──────────┤  ├────────────────┤  ├──────────┤  ├────────────┤
-│ Embeddings│  │ • Reasoning    │  │ Products │  │ • Ollama   │
-│ + Search │  │ • Memory Mgmt  │  │ • Clients│  │ • Bedrock  │
-│          │  │ • Tool Call    │  │ • Port.  │  │ • Config   │
+│ Search   │  │ • Reasoning    │  │ Products │  │ • OpenAI   │
+│ (from DB)│  │ • Memory Mgmt  │  │ • Clients│  │ • Bedrock  │
+│          │  │ • Tool Call    │  │ • Port.  │  │ • Anthropic│
 └──────────┘  │   Execution    │  │ (CSV→DB)│  └────────────┘
               │ • Guardrails   │  │         │
               └────────────────┘  └──────────┘
@@ -94,15 +95,24 @@ Response a Usuario
 
 ### 2. **Memory Manager** (`backend/agent/memory_manager.py`)
 
-**STM (Short-Term Memory):**
-- Últimos N mensajes de conversación
+**STM (Short-Term Memory) - Redis:**
+- Almacena últimos 30 mensajes de conversación
+- TTL de 1 hora (conversaciones expiran automáticamente)
 - Contexto actual de la sesión
 - Información extraída (monto, plazo, riesgo)
+- Fallback a memoria in-memory si Redis no disponible
 
-**LTM (Long-Term Memory):**
+**LTM (Long-Term Memory) - PostgreSQL:**
 - Perfil del cliente (persistente en BD)
-- Historial de recomendaciones
+- Historial de recomendaciones (`portfolio_recommendations`)
+- Portafolios actuales (`client_portfolios`)
 - Preferencias y metas financieras
+
+**Verificación:**
+```bash
+make verify-redis      # Ver conversaciones en Redis
+make verify-postgres   # Ver datos persistentes
+```
 
 ---
 
@@ -189,29 +199,43 @@ Output: 40% PROD002 ($20k) + 60% PROD006 ($30k)
 
 ### 7. **Modelos (Local vs Cloud)**
 
-**Local - Ollama:**
+**Local Development - OpenAI:**
 ```
 User → Backend
         ↓
-Ollama Container (11434)
+OpenAI API (gpt-4o-mini)
         ↓
-Llama 3.2 (4GB modelo)
+Tool Calling Nativo
+        ↓
+Consulta PostgreSQL (productos reales)
         ↓
 Respuesta → Backend → Usuario
 ```
+- ✅ **Tool calling nativo** (query_eligible_products, build_portfolio, etc.)
+- ⚡ **Rápido**: gpt-4o-mini responde en ~1-2 segundos
+- 💰 **Económico**: ~$0.01 por recomendación
+- 🔧 **Fácil setup**: Solo necesitas OPENAI_API_KEY
 
-**Cloud - AWS Bedrock:**
+**Cloud Production - AWS Bedrock:**
 ```
 User → API Gateway
         ↓
-Lambda Function
+Lambda Function / ECS
         ↓
 AWS Bedrock
         ↓
-Claude 3.5 Sonnet
+Claude 3.5 Sonnet/Haiku
+        ↓
+Tool Calling Nativo
+        ↓
+RDS PostgreSQL (productos reales)
         ↓
 Response → API Gateway → Usuario
 ```
+- ✅ **Tool calling nativo** (misma arquitectura que local)
+- 🔒 **Seguro**: Todo en AWS VPC privada
+- 📊 **Escalable**: Auto-scaling con demanda
+- 💼 **Enterprise**: SLA, compliance, auditoría
 
 ---
 
@@ -327,35 +351,74 @@ NO → Autoriza y retorna recomendación
 |------|-----------|----------|
 | **Frontend** | Streamlit | UI interactiva |
 | **Backend** | FastAPI | API REST |
-| **LLM Local** | Ollama + Llama 3.2 | Reasoning (dev) |
-| **LLM Cloud** | AWS Bedrock | Reasoning (prod) |
-| **Vector DB** | RAG (TF-IDF) | Búsqueda semántica |
-| **Data Store** | PostgreSQL 15 | BD relacional |
-| **Cache** | Redis 7 | Caché y memoria |
-| **Infrastructure** | Docker Compose / AWS CDK | Orquestación |
+| **LLM Local** | OpenAI (gpt-4o-mini) | Reasoning + Tool Calling (dev) |
+| **LLM Cloud** | AWS Bedrock (Claude 3.5) | Reasoning + Tool Calling (prod) |
+| **Data Store** | PostgreSQL 15 | BD relacional (productos, clientes) |
+| **Cache** | Redis 7 | Memoria conversacional (STM) |
+| **Infrastructure** | Docker Compose / AWS ECS | Orquestación |
 
 ---
 
 ## 🚀 Para Empezar
 
-**Local (5 minutos con Ollama):**
+### Desarrollo Local con OpenAI (Recomendado)
+
+**1. Configura tu API Key:**
+```bash
+# Copia el template
+cp .env.example .env
+
+# Edita .env y agrega tu OpenAI API Key
+# Obtén tu key en: https://platform.openai.com/api-keys
+nano .env  # Agrega: OPENAI_API_KEY=sk-proj-tu-key-aqui
+```
+
+**2. Levanta todos los servicios:**
 ```bash
 make quick-start
-make backend      # Terminal 1
-make frontend     # Terminal 2
-# Abre: http://localhost:8501
+# Construye imágenes + Inicia PostgreSQL, Redis, Backend, Frontend
+# Carga datos de productos desde CSV
+# Listo en ~2 minutos ⚡
 ```
 
-Detalles: [LEVANTAMIENTO_LOCAL.md](./LEVANTAMIENTO_LOCAL.md)
+**3. Abre la aplicación:**
+```
+Frontend: http://localhost:8501
+Backend API: http://localhost:8000/docs
+```
 
-**Cloud (AWS con Bedrock):**
+**Verificar servicios:**
 ```bash
-cd infra && cdk deploy
-python3 scripts/seed_rag.py
-# Endpoint en outputs
+make status          # Estado de contenedores
+make health          # Health check de todos los servicios
+make verify-redis    # Ver conversaciones en Redis (STM)
+make verify-postgres # Ver productos y clientes en PostgreSQL (LTM)
 ```
 
-Detalles: [LEVANTAMIENTO_NUBE.md](./LEVANTAMIENTO_NUBE.md)
+📖 **Guía detallada:** [LEVANTAMIENTO_LOCAL.md](./LEVANTAMIENTO_LOCAL.md)
+
+---
+
+### Producción en AWS con Bedrock
+
+**Prerequisitos:**
+- AWS CLI configurado
+- Acceso a Bedrock (región us-east-1)
+- RDS PostgreSQL y ElastiCache Redis
+
+```bash
+# Ver guía completa de deployment
+cat AWS_DEPLOYMENT.md
+
+# Deploy rápido con CloudFormation/CDK
+cd infra && cdk deploy
+
+# Cargar datos en RDS
+DB_HOST=finadvisor-prod.xxx.rds.amazonaws.com \
+python3 scripts/seed_database.py
+```
+
+📖 **Guía completa:** [AWS_DEPLOYMENT.md](./AWS_DEPLOYMENT.md)
 
 ---
 
@@ -363,11 +426,10 @@ Detalles: [LEVANTAMIENTO_NUBE.md](./LEVANTAMIENTO_NUBE.md)
 
 | Documento | Contenido |
 |-----------|----------|
-| [LEVANTAMIENTO_LOCAL.md](./LEVANTAMIENTO_LOCAL.md) | Guía setup Ollama |
-| [LEVANTAMIENTO_NUBE.md](./LEVANTAMIENTO_NUBE.md) | Guía deploy AWS |
-| [GUIA_PRODUCTOS_CSV.md](./GUIA_PRODUCTOS_CSV.md) | Estructura de datos |
-| [FLUJO_DATOS.md](./FLUJO_DATOS.md) | Diagrama de flujo |
-| [CAMBIOS_VERSIONADOS.md](./CAMBIOS_VERSIONADOS.md) | Breaking changes |
+| [LEVANTAMIENTO_LOCAL.md](./LEVANTAMIENTO_LOCAL.md) | Guía setup local con OpenAI |
+| [AWS_DEPLOYMENT.md](./AWS_DEPLOYMENT.md) | Guía completa deploy AWS + Bedrock |
+| [GUIA_PRODUCTOS_CSV.md](./GUIA_PRODUCTOS_CSV.md) | Estructura de datos de productos |
+| [FLUJO_DATOS.md](./FLUJO_DATOS.md) | Diagrama de flujo de datos |
 
 ---
 
@@ -393,10 +455,12 @@ Detalles: [LEVANTAMIENTO_NUBE.md](./LEVANTAMIENTO_NUBE.md)
 - Solución: CSVs versionadas en repo
 - Beneficio: Git-friendly, fácil de auditar
 
-**5. Ollama en local, Bedrock en cloud**
-- Problema: Economía (local) vs Escalabilidad (cloud)
-- Solución: Abstracción de modelo configurable
-- Beneficio: Mismo código, diferentes backends
+**5. OpenAI en local, Bedrock en cloud**
+- Problema: Tool calling nativo + Economía (local) vs Escalabilidad (cloud)
+- Solución: Abstracción de modelo configurable con OpenAI/Bedrock/Anthropic
+- Beneficio: Mismo código, tool calling nativo, diferentes backends
+- Costo dev: ~$0.01 por recomendación (gpt-4o-mini)
+- Costo prod: ~$0.05 por recomendación (Claude 3.5 Haiku)
 
 ---
 
@@ -410,4 +474,4 @@ Detalles: [LEVANTAMIENTO_NUBE.md](./LEVANTAMIENTO_NUBE.md)
 
 ---
 
-**Versión:** 1.1.0 | **Status:** ✅ Producción
+**Versión:** 2.0.0 | **Status:** ✅ Producción | **LLM:** OpenAI (dev) + Bedrock (prod)

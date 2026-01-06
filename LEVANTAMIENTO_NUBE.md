@@ -1,10 +1,10 @@
 # ☁️ Levantamiento en AWS
 
-Desplegar FinAdvisor en AWS con Bedrock (Claude 3.5 Sonnet equivalente).
+Desplegar FinAdvisor en AWS con Bedrock (Claude 3.5 Sonnet).
 
 ---
 
-## 📋 Prerequisites
+## ✅ Pre-requisitos
 
 ```bash
 # AWS CLI configurado
@@ -16,52 +16,57 @@ node --version
 # CDK instalado
 npm install -g aws-cdk
 
+# Python 3.11+
+python3 --version
+
 # Verificar credenciales
 aws sts get-caller-identity
 ```
 
 ---
 
-## 🚀 Deployment (5 pasos)
+## 🚀 Deployment
 
 ### 1. Preparar Infraestructura
 ```bash
 cd infra
 pip install -r requirements.txt
-cdk synth
-cdk diff
+cdk bootstrap  # Solo primera vez
+cdk diff       # Ver cambios
 ```
 
-### 2. Desplegar
+### 2. Desplegar Stack
 ```bash
-cdk deploy --require-approval never
+cdk deploy
 # Esperar ~15 minutos
 ```
 
-**Guardar outputs:**
-- API Endpoint
-- DB Host
-- Lambda Role ARN
-
-### 3. Inicializar BD
-```bash
-export DB_ENDPOINT=finadvisor-db.xxxxx.rds.amazonaws.com
-export DB_USER=postgres
-export DB_PASSWORD=<password>
-
-psql -h $DB_ENDPOINT -U $DB_USER -d finadvisor \
-  -f ../data/init_db.sql
+**Outputs importantes:**
+```
+FinAdvisorStack.DbEndpoint = finadvisor-db.xxxxx.rds.amazonaws.com
+FinAdvisorStack.RedisEndpoint = finadvisor-redis.xxxxx.cache.amazonaws.com
+FinAdvisorStack.RedisPort = 6379
+FinAdvisorStack.ApiEndpoint = https://xxxxx.execute-api.us-east-1.amazonaws.com/prod/
 ```
 
-### 4. Cargar Datos
+### 3. Inicializar Base de Datos
+
+Conéctate a un EC2 o usa AWS Cloud9 en la misma VPC:
+
 ```bash
+# Conectar a PostgreSQL
+export DB_ENDPOINT=<DbEndpoint del output>
+psql -h $DB_ENDPOINT -U postgres -d finadvisor -f ../data/init_db.sql
+
+# Cargar datos de productos
 cd ..
+python3 scripts/seed_database.py
 python3 scripts/seed_rag.py
 ```
 
-### 5. Verificar
+### 4. Verificar Deployment
 ```bash
-export API_ENDPOINT=$(cd infra && cdk output ApiEndpoint)
+export API_ENDPOINT=<ApiEndpoint del output>
 curl $API_ENDPOINT/health
 ```
 
@@ -89,18 +94,22 @@ AWS_REGION=us-east-1
 
 ---
 
-## ✅ Verificación
+## ✅ Verificación y Testing
 
+### Health Check
 ```bash
-# Health check
 curl $API_ENDPOINT/health
+```
 
-# Chat
+### Probar Chat
+```bash
 curl -X POST $API_ENDPOINT/chat \
   -H "Content-Type: application/json" \
   -d '{"client_id":"CLI001","message":"Hola"}'
+```
 
-# Recomendación
+### Generar Recomendación
+```bash
 curl -X POST $API_ENDPOINT/recommendation \
   -H "Content-Type: application/json" \
   -d '{
@@ -112,23 +121,73 @@ curl -X POST $API_ENDPOINT/recommendation \
   }'
 ```
 
+### Verificar Memorias
+
+#### STM (Redis - Conversaciones)
+```bash
+# Conectar a Redis desde EC2 en la misma VPC
+redis-cli -h <RedisEndpoint> -p 6379
+
+# Ver conversaciones
+> KEYS conversation:*
+> LRANGE conversation:CLI001 0 -1
+> TTL conversation:CLI001
+```
+
+#### LTM (PostgreSQL - Datos)
+```bash
+# Conectar a PostgreSQL
+psql -h <DbEndpoint> -U postgres -d finadvisor
+
+# Verificar datos
+SELECT COUNT(*) FROM products;      -- Debe ser 8
+SELECT COUNT(*) FROM clients;       -- Debe ser >= 1
+SELECT * FROM portfolio_recommendations ORDER BY recommendation_date DESC;
+```
+
 ---
 
 ## 📊 Monitoreo
 
+### Logs de Lambda
 ```bash
-# Ver logs Lambda
+# Ver logs en tiempo real
 aws logs tail /aws/lambda/FinAdvisorStack-OrchestratorLambda --follow
 
-# Verificar RDS
+# Ver últimos errores
+aws logs filter-pattern /aws/lambda/FinAdvisorStack-OrchestratorLambda \
+  --filter-pattern "ERROR"
+```
+
+### Estado de Servicios
+```bash
+# RDS PostgreSQL
 aws rds describe-db-instances \
   --db-instance-identifier finadvisor-db \
   --query 'DBInstances[0].DBInstanceStatus'
 
-# Ver métricas
+# ElastiCache Redis
+aws elasticache describe-cache-clusters \
+  --cache-cluster-id finadvisor-redis \
+  --query 'CacheClusters[0].CacheClusterStatus'
+```
+
+### Métricas CloudWatch
+```bash
+# Invocaciones de Lambda
 aws cloudwatch get-metric-statistics \
   --namespace AWS/Lambda \
   --metric-name Invocations \
+  --dimensions Name=FunctionName,Value=FinAdvisorStack-OrchestratorLambda \
+  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
+  --period 300 \
+  --statistics Sum
+
+# Errores de Lambda
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Errors \
   --dimensions Name=FunctionName,Value=FinAdvisorStack-OrchestratorLambda \
   --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) \
   --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
@@ -138,15 +197,19 @@ aws cloudwatch get-metric-statistics \
 
 ---
 
-## 💰 Costos (~$12/mes)
+## 💰 Costos (~$30/mes)
 
-| Servicio | Costo |
-|----------|-------|
-| Lambda | $0.20 |
-| RDS t3.micro | $7.00 |
-| DynamoDB | $1.00 |
-| API Gateway | $3.50 |
-| Data Transfer | $0.30 |
+| Servicio | Costo Mensual |
+|----------|---------------|
+| **RDS PostgreSQL** (t3.micro) | ~$15.00 |
+| **ElastiCache Redis** (t3.micro) | ~$12.00 |
+| **Lambda** (pay-per-use) | ~$0.20-5.00 |
+| **API Gateway** | ~$3.50 |
+| **S3 Data Bucket** | ~$0.50 |
+| **Data Transfer** | ~$0.30 |
+| **TOTAL ESTIMADO** | **~$31-36/mes** |
+
+**Nota:** Redis y PostgreSQL son los principales costos (managed services). Lambda y API Gateway son pay-per-use.
 
 ---
 

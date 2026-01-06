@@ -1,0 +1,9 @@
+id,name,type,annual_rate,min_months,max_months,min_amount,liquidity,allows_buyback,withdrawal_window_months,withdrawal_penalty_pct
+PROD001,Fondo Conservador A,conservador,0.035,6,120,1000,media,true,1,0.5
+PROD002,Bonos del Estado 5Y,conservador,0.045,60,60,5000,baja,false,0,0
+PROD003,Fondo Equilibrado B,moderado,0.065,12,120,2000,media,true,2,1.5
+PROD004,Acciones Latinoamérica,moderado,0.075,24,120,3000,media,true,3,2.0
+PROD005,Fondo Crecimiento C,agresivo,0.095,36,120,5000,baja,true,6,3.0
+PROD006,Criptomonedas Emergentes,agresivo,0.15,12,120,1000,alta,true,0,0
+PROD007,Plazo Fijo 18 Meses,conservador,0.055,18,18,1000,baja,false,0,0
+PROD008,ETF Diversificado Global,moderado,0.08,12,120,2500,alta,true,1,0.5
