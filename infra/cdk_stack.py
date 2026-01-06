@@ -5,6 +5,8 @@ Deploys all infrastructure including:
 - ElastiCache Redis for STM (conversation memory)
 - Lambda functions (Orchestrator, MCP servers)
 - API Gateway for HTTP endpoints
+- AWS App Runner for Streamlit frontend (serverless)
+- ECR repositories for Docker images
 - VPC with private subnets for database and cache
 """
 
@@ -16,6 +18,8 @@ from aws_cdk import (
     aws_apigateway as apigateway,
     aws_iam as iam,
     aws_s3 as s3,
+    aws_ecr as ecr,
+    aws_apprunner as apprunner,
     core,
     Duration,
 )
@@ -64,7 +68,15 @@ class FinAdvisorStack(core.Stack):
         )
 
         # API Gateway
-        self._create_api_gateway(orchestrator_lambda)
+        api = self._create_api_gateway(orchestrator_lambda)
+
+        # ECR Repositories for Docker images
+        backend_repo, frontend_repo = self._create_ecr_repositories()
+
+        # App Runner for Streamlit frontend
+        app_runner_service = self._create_app_runner_service(
+            frontend_repo, api, db_instance, redis_cluster
+        )
 
         # Outputs
         core.CfnOutput(
@@ -72,6 +84,13 @@ class FinAdvisorStack(core.Stack):
             "DbEndpoint",
             value=db_instance.db_instance_endpoint_address,
             description="RDS PostgreSQL Endpoint (LTM)",
+        )
+
+        core.CfnOutput(
+            self,
+            "DbSecretArn",
+            value=db_instance.secret.secret_arn if db_instance.secret else "",
+            description="Database credentials secret ARN",
         )
 
         core.CfnOutput(
@@ -93,6 +112,34 @@ class FinAdvisorStack(core.Stack):
             "DataBucketName",
             value=data_bucket.bucket_name,
             description="S3 Data Bucket",
+        )
+
+        core.CfnOutput(
+            self,
+            "ApiEndpoint",
+            value=api.url,
+            description="API Gateway Endpoint",
+        )
+
+        core.CfnOutput(
+            self,
+            "FrontendUrl",
+            value=f"https://{app_runner_service.attr_service_url}",
+            description="Streamlit Frontend URL (App Runner)",
+        )
+
+        core.CfnOutput(
+            self,
+            "BackendEcrRepo",
+            value=backend_repo.repository_uri,
+            description="Backend ECR Repository URI",
+        )
+
+        core.CfnOutput(
+            self,
+            "FrontendEcrRepo",
+            value=frontend_repo.repository_uri,
+            description="Frontend ECR Repository URI",
         )
 
     def _create_rds_instance(self, vpc: ec2.Vpc) -> rds.DatabaseInstance:
@@ -364,9 +411,115 @@ class FinAdvisorStack(core.Stack):
             apigateway.LambdaIntegration(orchestrator_lambda),
         )
 
-        core.CfnOutput(
+        return api
+
+    def _create_ecr_repositories(self):
+        """Create ECR repositories for Docker images"""
+
+        backend_repo = ecr.Repository(
             self,
-            "ApiEndpoint",
-            value=api.url,
-            description="API Gateway Endpoint",
+            "BackendRepository",
+            repository_name="finadvisor-backend",
+            removal_policy=core.RemovalPolicy.DESTROY,
+            lifecycle_rules=[
+                ecr.LifecycleRule(
+                    description="Keep last 5 images",
+                    max_image_count=5,
+                )
+            ],
         )
+
+        frontend_repo = ecr.Repository(
+            self,
+            "FrontendRepository",
+            repository_name="finadvisor-frontend",
+            removal_policy=core.RemovalPolicy.DESTROY,
+            lifecycle_rules=[
+                ecr.LifecycleRule(
+                    description="Keep last 5 images",
+                    max_image_count=5,
+                )
+            ],
+        )
+
+        return backend_repo, frontend_repo
+
+    def _create_app_runner_service(
+        self,
+        frontend_repo: ecr.Repository,
+        api: apigateway.RestApi,
+        db_instance: rds.DatabaseInstance,
+        redis_cluster: elasticache.CfnCacheCluster,
+    ):
+        """Create AWS App Runner service for Streamlit frontend"""
+
+        # Create IAM role for App Runner
+        app_runner_role = iam.Role(
+            self,
+            "AppRunnerInstanceRole",
+            assumed_by=iam.ServicePrincipal("tasks.apprunner.amazonaws.com"),
+        )
+
+        # Grant ECR pull permissions
+        frontend_repo.grant_pull(app_runner_role)
+
+        # Create App Runner access role (for ECR)
+        app_runner_access_role = iam.Role(
+            self,
+            "AppRunnerAccessRole",
+            assumed_by=iam.ServicePrincipal("build.apprunner.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AWSAppRunnerServicePolicyForECRAccess"
+                ),
+            ],
+        )
+
+        # App Runner service
+        app_runner_service = apprunner.CfnService(
+            self,
+            "StreamlitAppRunner",
+            service_name="finadvisor-frontend",
+            source_configuration=apprunner.CfnService.SourceConfigurationProperty(
+                authentication_configuration=apprunner.CfnService.AuthenticationConfigurationProperty(
+                    access_role_arn=app_runner_access_role.role_arn
+                ),
+                image_repository=apprunner.CfnService.ImageRepositoryProperty(
+                    image_identifier=f"{frontend_repo.repository_uri}:latest",
+                    image_repository_type="ECR",
+                    image_configuration=apprunner.CfnService.ImageConfigurationProperty(
+                        port="8501",
+                        runtime_environment_variables=[
+                            apprunner.CfnService.KeyValuePairProperty(
+                                name="API_ENDPOINT",
+                                value=api.url,
+                            ),
+                            apprunner.CfnService.KeyValuePairProperty(
+                                name="DB_HOST",
+                                value=db_instance.db_instance_endpoint_address,
+                            ),
+                            apprunner.CfnService.KeyValuePairProperty(
+                                name="REDIS_HOST",
+                                value=redis_cluster.attr_redis_endpoint_address,
+                            ),
+                        ],
+                    ),
+                ),
+                auto_deployments_enabled=True,
+            ),
+            instance_configuration=apprunner.CfnService.InstanceConfigurationProperty(
+                cpu="1024",  # 1 vCPU
+                memory="2048",  # 2 GB
+                instance_role_arn=app_runner_role.role_arn,
+            ),
+            health_check_configuration=apprunner.CfnService.HealthCheckConfigurationProperty(
+                protocol="HTTP",
+                path="/",
+                interval=10,
+                timeout=5,
+                healthy_threshold=1,
+                unhealthy_threshold=5,
+            ),
+        )
+
+        return app_runner_service

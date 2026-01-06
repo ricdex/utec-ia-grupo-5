@@ -115,7 +115,6 @@ def load_clients_from_csv(filepath):
                     'available_amount_usd': float(row['available_amount_usd']),
                     'liquidity_preference': row['liquidity_preference'],
                     'target_return_pct': float(row['target_return_pct']),
-                    'max_aggressive_pct': int(row['max_aggressive_pct']),
                     'goals': row['goals']
                 })
         return clients
@@ -172,8 +171,8 @@ def insert_clients(conn, clients):
         try:
             cursor.execute("""
                 INSERT INTO clients
-                (client_id, name, email, risk_profile, investment_horizon_months, available_amount_usd, liquidity_preference, target_return_pct, max_aggressive_pct, goals)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (client_id, name, email, risk_profile, investment_horizon_months, available_amount_usd, liquidity_preference, target_return_pct, goals)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (client_id) DO NOTHING
             """, (
                 client['client_id'],
@@ -184,7 +183,6 @@ def insert_clients(conn, clients):
                 client['available_amount_usd'],
                 client['liquidity_preference'],
                 client['target_return_pct'],
-                client['max_aggressive_pct'],
                 client['goals']
             ))
             if cursor.rowcount > 0:
@@ -196,6 +194,63 @@ def insert_clients(conn, clients):
     conn.commit()
     cursor.close()
     print(f"✅ Inserted {inserted} clients")
+
+
+def load_portfolios_from_csv(filepath):
+    """Load client portfolios from CSV file"""
+    portfolios = []
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                portfolios.append({
+                    'portfolio_id': row['portfolio_id'],
+                    'client_id': row['client_id'],
+                    'product_id': row['product_id'],
+                    'allocation_amount': float(row['allocation_amount']),
+                    'allocation_percentage': float(row['allocation_percentage']),
+                    'purchase_date': row['purchase_date']
+                })
+        return portfolios
+    except FileNotFoundError:
+        print(f"❌ CSV file not found: {filepath}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error loading CSV: {e}")
+        sys.exit(1)
+
+
+def insert_portfolios(conn, portfolios):
+    """Insert client portfolios into database"""
+    cursor = conn.cursor()
+    inserted = 0
+
+    # Clear existing portfolios
+    cursor.execute("TRUNCATE TABLE client_portfolios CASCADE")
+
+    for portfolio in portfolios:
+        try:
+            cursor.execute("""
+                INSERT INTO client_portfolios
+                (portfolio_id, client_id, product_id, allocation_amount, allocation_percentage, purchase_date)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                portfolio['portfolio_id'],
+                portfolio['client_id'],
+                portfolio['product_id'],
+                portfolio['allocation_amount'],
+                portfolio['allocation_percentage'],
+                portfolio['purchase_date']
+            ))
+            if cursor.rowcount > 0:
+                inserted += 1
+
+        except psycopg2.Error as e:
+            print(f"⚠️  Error inserting portfolio {portfolio['portfolio_id']}: {e}")
+
+    conn.commit()
+    cursor.close()
+    print(f"✅ Inserted {inserted} portfolios")
 
 
 def verify_data(conn):
@@ -210,11 +265,16 @@ def verify_data(conn):
     cursor.execute("SELECT COUNT(*) FROM clients")
     client_count = cursor.fetchone()[0]
 
+    # Count portfolios
+    cursor.execute("SELECT COUNT(*) FROM client_portfolios")
+    portfolio_count = cursor.fetchone()[0]
+
     cursor.close()
 
     print(f"\n📊 Database Status:")
     print(f"   Products: {product_count}")
     print(f"   Clients: {client_count}")
+    print(f"   Portfolios: {portfolio_count}")
 
     return product_count > 0 and client_count > 0
 
@@ -261,14 +321,17 @@ def main():
         print("\n📂 Loading data files...")
         products_file = Path(__file__).parent.parent / "data" / "products.csv"
         clients_file = Path(__file__).parent.parent / "data" / "clients.csv"
+        portfolios_file = Path(__file__).parent.parent / "data" / "portfolios.csv"
 
         products = load_products_from_csv(products_file)
         clients = load_clients_from_csv(clients_file)
+        portfolios = load_portfolios_from_csv(portfolios_file)
 
         # 3. Insert data
         print("\n📥 Inserting data...")
         insert_products(conn, products)
         insert_clients(conn, clients)
+        insert_portfolios(conn, portfolios)
 
         # 4. Verify
         print("\n✔️  Verifying...")

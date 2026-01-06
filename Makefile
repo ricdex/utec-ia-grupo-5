@@ -59,6 +59,11 @@ help:
 	@echo "  make clean-volumes ..... Stop and remove all volumes (⚠️ deletes data)"
 	@echo "  make env ............... Create .env from .env.example"
 	@echo "  make help .............. Show this message"
+	@echo ""
+	@echo "$(GREEN)☁️  AWS Cloud Deployment:$(NC)"
+	@echo "  make deploy-aws ........ Deploy to AWS (full stack + seed)"
+	@echo "  make update-aws ........ Update AWS deployment"
+	@echo "  make destroy-aws ....... Destroy all AWS resources"
 
 # Environment setup
 env:
@@ -361,3 +366,62 @@ clean-volumes:
 	@echo "$(CYAN)To restart:$(NC)"
 	@echo "  make docker-up"
 	@echo "  make docker-seed"
+
+# ============================================================
+# AWS CLOUD DEPLOYMENT
+# ============================================================
+
+deploy-aws:
+	@echo "$(CYAN)🚀 Deploying FinAdvisor to AWS...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)This will:${NC}"
+	@echo "  1. Validate prerequisites (AWS CLI, CDK, Docker)"
+	@echo "  2. Build Docker images"
+	@echo "  3. Deploy infrastructure with CDK"
+	@echo "  4. Push images to ECR"
+	@echo "  5. Seed database"
+	@echo "  6. Deploy Streamlit frontend to App Runner"
+	@echo ""
+	@echo "$(YELLOW)⚠️  Make sure you have:${NC}"
+	@echo "  - AWS credentials configured (aws configure)"
+	@echo "  - Bedrock access enabled in your region"
+	@echo "  - .env file with required variables"
+	@echo ""
+	@bash scripts/deploy_cloud.sh
+
+destroy-aws:
+	@echo "$(RED)╔════════════════════════════════════════════════════════════╗$(NC)"
+	@echo "$(RED)║  ⚠️  ADVERTENCIA: ESTO ELIMINARÁ TODOS LOS RECURSOS AWS  ║$(NC)"
+	@echo "$(RED)╚════════════════════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Esto eliminará permanentemente:$(NC)"
+	@echo "  • Base de datos RDS PostgreSQL (todos los datos)"
+	@echo "  • Cache Redis (memoria de conversaciones)"
+	@echo "  • Funciones Lambda"
+	@echo "  • API Gateway"
+	@echo "  • App Runner (Streamlit frontend)"
+	@echo "  • Repositorios ECR con imágenes Docker"
+	@echo "  • VPC y recursos de red"
+	@echo "  • Logs de CloudWatch"
+	@echo "  • Buckets S3"
+	@echo ""
+	@echo "$(RED)⚠️  Esta acción NO se puede deshacer$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Presiona Ctrl+C para cancelar, o espera 10 segundos para continuar...$(NC)"
+	@sleep 10
+	@echo ""
+	@echo "$(CYAN)🗑️  Destruyendo infraestructura AWS...$(NC)"
+	@cd infra && cdk destroy --force || true
+	@echo ""
+	@echo "$(GREEN)✓ Recursos AWS eliminados$(NC)"
+	@echo ""
+	@echo "$(CYAN)💰 Ahorro de costos:$(NC)"
+	@echo "  • Ya no se generarán cargos por servicios AWS"
+	@echo "  • Los costos anteriores pueden aparecer en la próxima factura"
+	@echo ""
+	@echo "$(CYAN)Para redesplegar:$(NC)"
+	@echo "  make deploy-aws"
+
+update-aws:
+	@echo "$(CYAN)🔄 Updating AWS deployment...$(NC)"
+	@bash scripts/deploy_cloud.sh

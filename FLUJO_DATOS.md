@@ -1,4 +1,4 @@
-# 🔄 Data Flow - FinAdvisor
+# 🔄 Flujo de Datos - FinAdvisor
 
 Documento que explica cómo los datos fluyen desde los archivos CSV hasta las recomendaciones finales.
 

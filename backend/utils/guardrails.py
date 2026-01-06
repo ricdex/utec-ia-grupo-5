@@ -167,7 +167,6 @@ class FinancialGuardrails:
 - Retorno mínimo esperado: ≥ {client_profile.get('target_return_pct'):.1%} anual
 - Riesgo aceptable: {expected_risk}
 - Liquidez necesaria: {client_profile.get('liquidity_preference')}
-- Límite en productos agresivos: ≤ {client_profile.get('max_aggressive_pct')}%
 
 ### Estrategia Propuesta (Simulación de Escenarios):
 La cartera que te recomendamos logra un equilibrio entre tus objetivos:
@@ -191,7 +190,7 @@ La cartera que te recomendamos logra un equilibrio entre tus objetivos:
 ### Por qué esta combinación:
 1. **Diversificación**: Combina productos conservadores (estabilidad) con moderados (crecimiento)
 2. **Cumplimiento de metas**: Alcanza tu objetivo de retorno manteniendo tu perfil de riesgo
-3. **Respeto a preferencias**: Se respeta tu límite de {client_profile.get('max_aggressive_pct')}% en productos agresivos
+3. **Respeto a preferencias**: Se respetan los límites de tu perfil de riesgo ({client_profile.get('risk_profile')})
 4. **Flexibilidad**: Todos los productos tienen opciones de recompra en caso de necesidad
 
 ### Próximos Pasos:

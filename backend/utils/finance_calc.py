@@ -208,17 +208,20 @@ class FinanceCalculator:
         """
         violations = []
 
-        # Check aggressive allocation limit
-        aggressive_pct = sum(
-            a.percentage for a in allocations
-            if a.annual_rate > 0.085
-        )
+        # Check allocation limits by risk profile
+        # Note: This is a simplified check. Full validation happens in guardrails.py
+        risk_profile = client_profile.get('risk_profile', 'moderado')
 
-        max_aggressive = client_profile.get('max_aggressive_pct', 40)
-        if aggressive_pct > max_aggressive:
-            violations.append(
-                f"Aggressive allocation {aggressive_pct:.1f}% exceeds limit {max_aggressive}%"
+        # Basic sanity check: conservative profile should not have aggressive products
+        if risk_profile == 'conservador':
+            aggressive_pct = sum(
+                a.percentage for a in allocations
+                if a.annual_rate > 0.085  # Approximate aggressive threshold
             )
+            if aggressive_pct > 0:
+                violations.append(
+                    f"Conservative profile should not have aggressive products ({aggressive_pct:.1f}%)"
+                )
 
         # Check target return is achievable
         portfolio_return = sum(

@@ -120,8 +120,7 @@ class FinAdvisorOrchestrator:
             recommendation = agent._build_portfolio({
                 "amount": amount,
                 "risk_profile": risk_profile,
-                "months": months,
-                "max_aggressive_pct": 40
+                "months": months
             })
 
             rec_data = json.loads(recommendation)
@@ -138,8 +137,7 @@ class FinAdvisorOrchestrator:
                     "risk_profile": risk_profile,
                     "available_amount_usd": amount,
                     "investment_horizon_months": months,
-                    "target_return_pct": target_return or 0,
-                    "max_aggressive_pct": 40
+                    "target_return_pct": target_return or 0
                 },
                 "portfolio_allocation": rec_data.get("allocations", []),
                 "expected_return": rec_data.get("metrics", {}).get("expected_return", 0)

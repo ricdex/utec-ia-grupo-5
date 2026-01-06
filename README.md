@@ -401,24 +401,35 @@ make verify-postgres # Ver productos y clientes en PostgreSQL (LTM)
 
 ### Producción en AWS con Bedrock
 
-**Prerequisitos:**
-- AWS CLI configurado
-- Acceso a Bedrock (región us-east-1)
-- RDS PostgreSQL y ElastiCache Redis
+**Deploy completo con un solo comando:**
 
 ```bash
-# Ver guía completa de deployment
-cat AWS_DEPLOYMENT.md
-
-# Deploy rápido con CloudFormation/CDK
-cd infra && cdk deploy
-
-# Cargar datos en RDS
-DB_HOST=finadvisor-prod.xxx.rds.amazonaws.com \
-python3 scripts/seed_database.py
+make deploy-aws
+# Despliega:
+# - RDS PostgreSQL + Redis
+# - Lambda (backend) + API Gateway
+# - Streamlit en App Runner (serverless)
+# - Seed automático de datos
+# - Retorna URLs del frontend y API
 ```
 
-📖 **Guía completa:** [AWS_DEPLOYMENT.md](./AWS_DEPLOYMENT.md)
+**Prerequisitos:**
+- AWS CLI configurado (`aws configure`)
+- AWS CDK instalado (`npm install -g aws-cdk`)
+- Acceso a Bedrock habilitado (región us-east-1)
+- Docker instalado
+
+**Resultado:**
+```
+✅ Deployment complete!
+
+Frontend (Streamlit): https://abc123.us-east-1.awsapprunner.com
+Backend API: https://xyz789.execute-api.us-east-1.amazonaws.com/prod/
+```
+
+📖 **Guía completa:** [DESPLIEGUE_AWS.md](./DESPLIEGUE_AWS.md)
+
+**Costos**: ~$50-100/mes (escala a casi $0 cuando no se usa)
 
 ---
 
@@ -427,8 +438,8 @@ python3 scripts/seed_database.py
 | Documento | Contenido |
 |-----------|----------|
 | [LEVANTAMIENTO_LOCAL.md](./LEVANTAMIENTO_LOCAL.md) | Guía setup local con OpenAI |
-| [AWS_DEPLOYMENT.md](./AWS_DEPLOYMENT.md) | Guía completa deploy AWS + Bedrock |
-| [GUIA_PRODUCTOS_CSV.md](./GUIA_PRODUCTOS_CSV.md) | Estructura de datos de productos |
+| [DESPLIEGUE_AWS.md](./DESPLIEGUE_AWS.md) | Guía completa deploy AWS + Bedrock |
+| [GUIA_DATOS.md](./GUIA_DATOS.md) | Estructura de datos CSV y seed |
 | [FLUJO_DATOS.md](./FLUJO_DATOS.md) | Diagrama de flujo de datos |
 
 ---
