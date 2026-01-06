@@ -9,6 +9,10 @@ import json
 from datetime import datetime
 import os
 from typing import Optional, Dict, List
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Page config
 st.set_page_config(
@@ -41,6 +45,7 @@ st.markdown("""
     }
     .warning-box {
         background-color: #fff3cd;
+        color: #856404;
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 5px solid #ffc107;
@@ -48,6 +53,7 @@ st.markdown("""
     }
     .success-box {
         background-color: #d4edda;
+        color: #155724;
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 5px solid #28a745;
@@ -82,10 +88,13 @@ def call_api(method: str, endpoint: str, data: Optional[Dict] = None) -> Optiona
     try:
         url = f"{st.session_state.api_endpoint}{endpoint}"
 
+        # Get timeout from environment variable (default 30 seconds)
+        timeout = int(os.getenv("API_TIMEOUT", "30"))
+
         if method.upper() == "GET":
-            response = requests.get(url, timeout=30)
+            response = requests.get(url, timeout=timeout)
         elif method.upper() == "POST":
-            response = requests.post(url, json=data, timeout=30)
+            response = requests.post(url, json=data, timeout=timeout)
         else:
             st.error(f"Unsupported HTTP method: {method}")
             return None
@@ -100,7 +109,8 @@ def call_api(method: str, endpoint: str, data: Optional[Dict] = None) -> Optiona
         st.error(f"❌ No se puede conectar a la API en {st.session_state.api_endpoint}")
         return None
     except requests.exceptions.Timeout:
-        st.error("⏱️ Timeout de la API (>30s)")
+        timeout = int(os.getenv("API_TIMEOUT", "30"))
+        st.error(f"⏱️ Timeout de la API (>{timeout}s)")
         return None
     except Exception as e:
         st.error(f"Error: {str(e)}")
@@ -149,13 +159,12 @@ def get_available_models() -> Dict:
     if response:
         return response
     return {
-        "current": {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022"},
+        "current": {"provider": "openai", "model": "gpt-4o-mini"},
         "available_providers": {
-            "anthropic": [
-                {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet"},
-                {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku"},
-                {"id": "claude-3-opus-20250219", "name": "Claude 3 Opus"}
+            "openai": [
+                {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "description": "Fast and cost-effective"}
             ],
+            "anthropic": [],
             "bedrock": []
         }
     }
@@ -194,22 +203,48 @@ st.sidebar.markdown("## 🤖 Modelo IA")
 
 if st.session_state.available_models:
     models_info = st.session_state.available_models
-    current_model = models_info.get("current", {}).get("model", "claude-3-5-sonnet-20241022")
+    current_provider = models_info.get("current", {}).get("provider", "openai")
+    current_model = models_info.get("current", {}).get("model", "gpt-4o-mini")
 
     # Show current model
-    st.sidebar.info(f"**Modelo actual**: {current_model.split('/')[-1]}")
+    st.sidebar.info(f"**Modelo actual**: {current_model}")
 
-    # Create model options
-    anthropic_models = models_info.get("available_providers", {}).get("anthropic", [])
-    bedrock_models = models_info.get("available_providers", {}).get("bedrock", [])
+    # Get all available providers
+    available_providers = models_info.get("available_providers", {})
+    local_models = available_providers.get("local", [])
+    openai_models = available_providers.get("openai", [])
+    anthropic_models = available_providers.get("anthropic", [])
+    bedrock_models = available_providers.get("bedrock", [])
+
+    # Build provider list
+    provider_options = []
+    if openai_models:
+        provider_options.append("openai")
+    if local_models:
+        provider_options.append("local")
+    if anthropic_models:
+        provider_options.append("anthropic")
+    if bedrock_models:
+        provider_options.append("bedrock")
+
+    # Default to current provider or first available
+    default_index = 0
+    if current_provider in provider_options:
+        default_index = provider_options.index(current_provider)
 
     selected_provider = st.sidebar.selectbox(
         "Proveedor",
-        ["anthropic", "bedrock"] if bedrock_models else ["anthropic"],
-        help="Elige entre Anthropic (Claude) o AWS Bedrock"
+        provider_options,
+        index=default_index,
+        help="Elige el proveedor de IA (OpenAI=GPT models, Anthropic=Claude, Bedrock=AWS)"
     )
 
-    if selected_provider == "anthropic":
+    # Get models for selected provider
+    if selected_provider == "local":
+        models_list = local_models
+    elif selected_provider == "openai":
+        models_list = openai_models
+    elif selected_provider == "anthropic":
         models_list = anthropic_models
     else:
         models_list = bedrock_models
@@ -263,16 +298,16 @@ if st.session_state.client_profile:
 
     st.sidebar.metric(
         "Monto Disponible",
-        f"USD {profile.get('available_amount_usd', 0):,.0f}"
+        f"USD {(profile.get('available_amount_usd') or 0):,.0f}"
     )
 
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        st.sidebar.write(f"**Perfil**: {profile.get('risk_profile', 'N/A')}")
+        st.sidebar.write(f"**Perfil**: {profile.get('risk_profile') or 'N/A'}")
     with col2:
-        st.sidebar.write(f"**Horizonte**: {profile.get('investment_horizon_months', 'N/A')}m")
+        st.sidebar.write(f"**Horizonte**: {profile.get('investment_horizon_months') or 'N/A'}m")
 
-    st.sidebar.write(f"**Meta Retorno**: {profile.get('target_return_pct', 0):.1f}%")
+    st.sidebar.write(f"**Meta Retorno**: {(profile.get('target_return_pct') or 0):.1f}%")
 
 # Main content
 st.markdown("<div class='main-header'><h1>💰 FinAdvisor</h1><p>Asesor Financiero Impulsado por IA</p></div>", unsafe_allow_html=True)
@@ -298,10 +333,19 @@ with tab1:
             else:
                 st.chat_message("assistant").write(msg["content"])
 
-    # Chat input
-    user_input = st.chat_input("Escribe tu pregunta o comentario...")
+    # Chat input (using form since st.chat_input() can't be in tabs)
+    with st.form(key="chat_form", clear_on_submit=True):
+        col1, col2 = st.columns([6, 1])
+        with col1:
+            user_input = st.text_input(
+                "Tu mensaje:",
+                placeholder="Escribe tu pregunta o comentario...",
+                label_visibility="collapsed"
+            )
+        with col2:
+            submit_button = st.form_submit_button("Enviar", use_container_width=True)
 
-    if user_input:
+    if submit_button and user_input:
         # Add user message to history
         st.session_state.messages.append({
             "role": "user",
@@ -345,28 +389,28 @@ with tab2:
         with col1:
             amount = st.number_input(
                 "Monto a Invertir (USD)",
-                value=profile.get("available_amount_usd", 50000),
-                min_value=1000,
-                step=5000
+                value=float(profile.get("available_amount_usd") or 50000),
+                min_value=1000.0,
+                step=5000.0
             )
 
             risk_profile = st.selectbox(
                 "Perfil de Riesgo",
                 ["conservador", "moderado", "agresivo"],
-                index=["conservador", "moderado", "agresivo"].index(profile.get("risk_profile", "moderado"))
+                index=["conservador", "moderado", "agresivo"].index(profile.get("risk_profile") or "moderado")
             )
 
         with col2:
             months = st.number_input(
                 "Horizonte de Inversión (meses)",
-                value=profile.get("investment_horizon_months", 24),
+                value=int(profile.get("investment_horizon_months") or 24),
                 min_value=6,
                 step=6
             )
 
             target_return = st.number_input(
                 "Retorno Objetivo Anual (%)",
-                value=profile.get("target_return_pct", 8.0),
+                value=float(profile.get("target_return_pct") or 8.0),
                 min_value=0.0,
                 max_value=50.0,
                 step=0.5

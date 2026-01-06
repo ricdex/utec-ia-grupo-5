@@ -9,14 +9,14 @@ from typing import Dict, List, Tuple, Optional
 from datetime import datetime
 from dataclasses import asdict
 
-from memory_manager import MemoryManager
-from rag_manager import RAGManager, RAGProductDatabase
-from ..utils.finance_calc import FinanceCalculator, SimulationEngine, ProductAllocation
-from ..utils.guardrails import FinancialGuardrails, GuardrailViolation
-from ..utils.config import get_config
-from ..utils.llm_client import LLMClientFactory
-from ..mcp_servers.postgres_server import PostgreSQLServer
-from ..mcp_servers.market_api_server import MarketAPIServer
+from agent.memory_manager import MemoryManager
+from agent.rag_manager import RAGManager, RAGProductDatabase
+from utils.finance_calc import FinanceCalculator, SimulationEngine, ProductAllocation
+from utils.guardrails import FinancialGuardrails, GuardrailViolation
+from utils.config import get_config
+from utils.llm_client import LLMClientFactory
+from mcp_servers.postgres_server import PostgreSQLServer
+from mcp_servers.market_api_server import MarketAPIServer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,6 +62,9 @@ class FinAdvisor:
 
         # System prompt with context
         self.system_prompt = self._build_system_prompt()
+
+        # Define tools for LLM (all providers except legacy Ollama)
+        self.tools = self._define_tools() if self.provider != "local" else None
 
     def _build_system_prompt(self) -> str:
         """Build system prompt for Goal-Based Reflex Agent"""
@@ -143,12 +146,148 @@ Cuando el usuario pregunte:
 No ejecutas operaciones reales. Requieres confirmación humana para cualquier inversión.
         """
 
+    def _define_tools(self) -> List[Dict]:
+        """Define tool schemas for LLM function calling"""
+        return [
+            {
+                "name": "query_eligible_products",
+                "description": "Busca productos financieros elegibles según criterios del cliente (monto, perfil de riesgo, horizonte de inversión)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "amount": {
+                            "type": "number",
+                            "description": "Monto a invertir en USD"
+                        },
+                        "risk_profile": {
+                            "type": "string",
+                            "enum": ["conservador", "moderado", "agresivo"],
+                            "description": "Perfil de riesgo del cliente"
+                        },
+                        "months": {
+                            "type": "integer",
+                            "description": "Horizonte de inversión en meses"
+                        }
+                    },
+                    "required": ["amount", "risk_profile", "months"]
+                }
+            },
+            {
+                "name": "get_client_profile",
+                "description": "Obtiene el perfil completo del cliente desde la base de datos (riesgo, horizonte, monto disponible, objetivos)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "get_client_contracted_products",
+                "description": "Obtiene la lista de productos financieros que el cliente ya tiene contratados",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "get_client_invested_capital",
+                "description": "Obtiene el capital total que el cliente tiene invertido actualmente",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "build_portfolio",
+                "description": "Construye una recomendación de portafolio diversificado basado en los criterios del cliente",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "amount": {
+                            "type": "number",
+                            "description": "Monto total a invertir en USD"
+                        },
+                        "risk_profile": {
+                            "type": "string",
+                            "enum": ["conservador", "moderado", "agresivo"],
+                            "description": "Perfil de riesgo del cliente"
+                        },
+                        "months": {
+                            "type": "integer",
+                            "description": "Horizonte de inversión en meses"
+                        }
+                    },
+                    "required": ["amount", "risk_profile", "months"]
+                }
+            },
+            {
+                "name": "validate_guardrails",
+                "description": "Valida que la recomendación de portafolio cumpla con las restricciones y guardrails de riesgo",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "client_profile": {
+                            "type": "object",
+                            "description": "Perfil del cliente con risk_profile, available_amount_usd, etc.",
+                            "properties": {
+                                "risk_profile": {"type": "string"},
+                                "available_amount_usd": {"type": "number"}
+                            }
+                        },
+                        "portfolio_allocation": {
+                            "type": "array",
+                            "description": "Lista de allocations del portafolio",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "product_id": {"type": "string"},
+                                    "percentage": {"type": "number"},
+                                    "amount": {"type": "number"}
+                                }
+                            }
+                        },
+                        "expected_return": {
+                            "type": "number",
+                            "description": "Retorno esperado del portafolio"
+                        }
+                    },
+                    "required": ["client_profile", "portfolio_allocation", "expected_return"]
+                }
+            },
+            {
+                "name": "get_market_indicators",
+                "description": "Obtiene indicadores actuales del mercado (S&P 500, NASDAQ, bonos, etc.)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "get_product_market_data",
+                "description": "Obtiene datos de mercado de productos específicos con exposición accionaria (precios NASDAQ, etc.)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "product_names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Lista de nombres de productos"
+                        }
+                    },
+                    "required": ["product_names"]
+                }
+            }
+        ]
+
     def chat(self, user_message: str) -> str:
         """
         Main chat method - implements agentic loop with tools
         """
 
-        # Add to STM
+        # Add message to STM
         self.memory.add_user_message(user_message)
 
         # Build messages for LLM
@@ -162,12 +301,15 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
             iteration += 1
             logger.info(f"Iteration {iteration}: Calling LLM")
 
-            response = self.llm_client.messages.create(
+            response = self.llm_client.create_message(
                 model=self.model,
                 max_tokens=2048,
                 system=self.system_prompt,
-                messages=messages
+                messages=messages,
+                tools=self.tools  # Pass tools for Anthropic/Bedrock
             )
+
+            logger.info(f"LLM stop_reason: {response.stop_reason}")
 
             # Check if we need to use tools
             if response.stop_reason == "tool_use":
@@ -177,20 +319,37 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
 
                 tool_results = []
                 for block in response.content:
-                    if block.type == "tool_use":
-                        tool_result = self._execute_tool(block.name, block.input)
+                    # Handle both dict (OpenAI) and object (Anthropic) formats
+                    block_type = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+                    if block_type == "tool_use":
+                        block_name = block.get("name") if isinstance(block, dict) else block.name
+                        block_input = block.get("input") if isinstance(block, dict) else block.input
+                        block_id = block.get("id") if isinstance(block, dict) else block.id
+
+                        logger.info(f"Calling tool: {block_name} with input: {block_input}")
+                        tool_result = self._execute_tool(block_name, block_input)
+                        logger.info(f"Tool {block_name} returned: {tool_result[:200]}...")
                         tool_results.append({
                             "type": "tool_result",
-                            "tool_use_id": block.id,
+                            "tool_use_id": block_id,
                             "content": tool_result
                         })
 
                 # Add tool results to messages
+                logger.info(f"Sending {len(tool_results)} tool results back to LLM")
                 messages.append({"role": "user", "content": tool_results})
 
             elif response.stop_reason == "end_turn":
                 # Agent finished reasoning
-                final_response = response.content[0].text if response.content else ""
+                final_response = ""
+                if response.content:
+                    content_block = response.content[0]
+                    try:
+                        # Try object attribute first (Anthropic)
+                        final_response = content_block.text
+                    except AttributeError:
+                        # Fallback to dict access (Ollama/Bedrock)
+                        final_response = content_block.get("text", "")
                 self.memory.add_assistant_message(final_response)
                 return final_response
             else:
@@ -214,7 +373,7 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
             })
 
         # Add recent messages
-        for msg in self.memory.stm.get_conversation_history(last_n=5):
+        for msg in self.memory.get_conversation_history(last_n=5):
             messages.append({
                 "role": msg["role"],
                 "content": msg["content"]
@@ -326,8 +485,7 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
             allocations = FinanceCalculator.diversify_portfolio(
                 total_amount=params["amount"],
                 eligible_products=products,
-                client_risk_profile=params.get("risk_profile", "moderado"),
-                max_aggressive_pct=params.get("max_aggressive_pct", 40)
+                client_risk_profile=params.get("risk_profile", "moderado")
             )
 
             # Calculate portfolio metrics based on real product data
@@ -413,7 +571,7 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
 
         return {
             "client_id": self.client_id,
-            "conversation": self.memory.stm.messages,
+            "conversation": self.memory.get_conversation_history(),
             "client_profile": self.memory.get_client_memory(),
             "last_response": initial_response
         }

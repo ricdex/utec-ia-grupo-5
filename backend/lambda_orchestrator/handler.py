@@ -9,6 +9,7 @@ import os
 import logging
 import sys
 from typing import Dict, Any
+from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -245,6 +246,8 @@ class FinAdvisorOrchestrator:
             current_model = self.config.get_model_name()
 
             # Get all available models
+            openai_models = self.config.get_available_models("openai")
+            local_models = self.config.get_available_models("local")
             anthropic_models = self.config.get_available_models("anthropic")
             bedrock_models = self.config.get_available_models("bedrock")
 
@@ -256,6 +259,8 @@ class FinAdvisorOrchestrator:
                         "model": current_model
                     },
                     "available_providers": {
+                        "openai": openai_models,
+                        "local": local_models,
                         "anthropic": anthropic_models,
                         "bedrock": bedrock_models
                     }

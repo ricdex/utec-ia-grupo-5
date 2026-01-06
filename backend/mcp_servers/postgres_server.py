@@ -6,6 +6,7 @@ Provides tools for querying products, clients, and portfolio data
 import json
 import logging
 from typing import Any
+from decimal import Decimal
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import mcp.server.stdio
@@ -22,6 +23,20 @@ class PostgreSQLServer:
         self.db_password = db_password
         self.db_port = db_port
         self.connection = None
+
+    @staticmethod
+    def _convert_decimals(data):
+        """Convert Decimal and datetime values for JSON compatibility"""
+        from datetime import datetime, date
+        if isinstance(data, dict):
+            return {k: PostgreSQLServer._convert_decimals(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [PostgreSQLServer._convert_decimals(item) for item in data]
+        elif isinstance(data, Decimal):
+            return float(data)
+        elif isinstance(data, (datetime, date)):
+            return data.isoformat()
+        return data
 
     def connect(self):
         """Establish database connection"""
@@ -74,7 +89,8 @@ class PostgreSQLServer:
             results = cursor.fetchall()
             cursor.close()
 
-            return [dict(row) for row in results]
+            # Convert Decimal to float for compatibility
+            return [self._convert_decimals(dict(row)) for row in results]
         except psycopg2.Error as e:
             logger.error(f"Query error: {e}")
             return []
@@ -88,7 +104,7 @@ class PostgreSQLServer:
             result = cursor.fetchone()
             cursor.close()
 
-            return dict(result) if result else {}
+            return self._convert_decimals(dict(result)) if result else {}
         except psycopg2.Error as e:
             logger.error(f"Error getting client profile: {e}")
             return {}
@@ -107,7 +123,7 @@ class PostgreSQLServer:
             results = cursor.fetchall()
             cursor.close()
 
-            return [dict(row) for row in results]
+            return [self._convert_decimals(dict(row)) for row in results]
         except psycopg2.Error as e:
             logger.error(f"Error getting portfolio: {e}")
             return []
@@ -129,8 +145,7 @@ class PostgreSQLServer:
                 p.name,
                 p.type,
                 p.annual_rate,
-                p.liquidity,
-                p.description
+                p.liquidity
             FROM client_portfolios cp
             JOIN products p ON cp.product_id = p.id
             WHERE cp.client_id = %s
@@ -150,8 +165,7 @@ class PostgreSQLServer:
                     "liquidity": row['liquidity'],
                     "allocation_percentage": float(row['allocation_percentage']) if row['allocation_percentage'] else 0,
                     "allocation_amount": float(row['allocation_amount']) if row['allocation_amount'] else 0,
-                    "purchase_date": str(row['purchase_date']) if row['purchase_date'] else None,
-                    "description": row['description']
+                    "purchase_date": str(row['purchase_date']) if row['purchase_date'] else None
                 })
 
             return {

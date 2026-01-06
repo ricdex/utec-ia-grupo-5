@@ -203,10 +203,39 @@ COMPOSICIÓN DE {data['product_name']}:
         return False
 
 
+def check_database_seeded():
+    """Check if database already has data"""
+    try:
+        config = get_config()
+        db_config = config.get_db_config()
+
+        conn = psycopg2.connect(
+            host=db_config['db_host'],
+            port=db_config['db_port'],
+            database=db_config['db_name'],
+            user=db_config['db_user'],
+            password=db_config['db_password']
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM products")
+        count = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        return count > 0
+    except Exception:
+        return False
+
+
 def main():
     """Initialize FinAdvisor: PostgreSQL database and RAG"""
     print("🚀 FinAdvisor Data Initialization\n")
     print("=" * 50)
+
+    # 0. Check if already seeded
+    if check_database_seeded():
+        print("✅ Database already seeded")
+        print("   Use 'make clean-volumes' to reset and reseed\n")
+        return
 
     # 1. Initialize PostgreSQL database
     if not initialize_postgresql():
@@ -217,20 +246,9 @@ def main():
     print("📚 Creating RAG Manager...")
     rag = RAGManager()
 
-    # Paths
-    data_dir = Path(__file__).parent.parent / "data"
-    products_csv = data_dir / "products_info.csv"
-    structure_csv = data_dir / "product_structure.csv"
-
-    # 3. Load products into RAG
-    if not load_products_from_csv(rag, str(products_csv)):
-        print("❌ Failed to load products. Stopping.\n")
-        return
-
-    # 4. Load structure into RAG
-    if not load_product_structure_from_csv(rag, str(structure_csv)):
-        print("❌ Failed to load structure. Stopping.\n")
-        return
+    # 3. RAG data is loaded automatically from PostgreSQL
+    # No need for separate CSV files
+    print("✅ RAG uses product data from PostgreSQL directly\n")
 
     # Verify
     print("=" * 50)

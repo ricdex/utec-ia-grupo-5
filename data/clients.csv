@@ -1,0 +1,5 @@
+client_id,name,email,risk_profile,investment_horizon_months,available_amount_usd,liquidity_preference,target_return_pct,goals
+CLI001,Carlos Martínez,carlos.martinez@example.com,conservador,24,10000,media,5.0,"ahorro retiro, estabilidad"
+CLI002,María García,maria.garcia@example.com,moderado,36,30000,media,8.0,"crecimiento, educación hijos"
+CLI003,Juan López,juan.lopez@example.com,agresivo,60,40000,baja,12.0,"maximizar retorno, crear riqueza"
+CLI004,Ana Rodríguez,ana.rodriguez@example.com,conservador,12,10000,alta,3.5,"emergencia, liquidez"

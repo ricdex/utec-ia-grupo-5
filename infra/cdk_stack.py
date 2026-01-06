@@ -1,17 +1,17 @@
 """
 AWS CDK Stack for FinAdvisor Application
 Deploys all infrastructure including:
-- RDS PostgreSQL for products and client data
-- DynamoDB for memory persistence
+- RDS PostgreSQL for LTM (client profiles, recommendations)
+- ElastiCache Redis for STM (conversation memory)
 - Lambda functions (Orchestrator, MCP servers)
 - API Gateway for HTTP endpoints
-- VPC with private subnets for database
+- VPC with private subnets for database and cache
 """
 
 from aws_cdk import (
     aws_ec2 as ec2,
     aws_rds as rds,
-    aws_dynamodb as dynamodb,
+    aws_elasticache as elasticache,
     aws_lambda as lambda_,
     aws_apigateway as apigateway,
     aws_iam as iam,
@@ -38,17 +38,17 @@ class FinAdvisorStack(core.Stack):
             cidr="10.0.0.0/16",
         )
 
-        # RDS PostgreSQL Instance
+        # RDS PostgreSQL Instance (LTM)
         db_instance = self._create_rds_instance(vpc)
 
-        # DynamoDB Table for Memory
-        memory_table = self._create_dynamodb_table()
+        # ElastiCache Redis Cluster (STM)
+        redis_cluster = self._create_redis_cluster(vpc)
 
         # S3 Bucket for data and logs
         data_bucket = self._create_s3_bucket()
 
         # Lambda execution role
-        lambda_role = self._create_lambda_role(db_instance, memory_table, data_bucket)
+        lambda_role = self._create_lambda_role(db_instance, data_bucket)
 
         # Lambda: MCP Postgres Server
         postgres_mcp_lambda = self._create_postgres_mcp_lambda(
@@ -60,7 +60,7 @@ class FinAdvisorStack(core.Stack):
 
         # Lambda: Main Orchestrator
         orchestrator_lambda = self._create_orchestrator_lambda(
-            lambda_role, db_instance, memory_table, vpc
+            lambda_role, db_instance, redis_cluster, vpc
         )
 
         # API Gateway
@@ -71,14 +71,21 @@ class FinAdvisorStack(core.Stack):
             self,
             "DbEndpoint",
             value=db_instance.db_instance_endpoint_address,
-            description="RDS PostgreSQL Endpoint",
+            description="RDS PostgreSQL Endpoint (LTM)",
         )
 
         core.CfnOutput(
             self,
-            "MemoryTableName",
-            value=memory_table.table_name,
-            description="DynamoDB Memory Table",
+            "RedisEndpoint",
+            value=redis_cluster.attr_redis_endpoint_address,
+            description="ElastiCache Redis Endpoint (STM)",
+        )
+
+        core.CfnOutput(
+            self,
+            "RedisPort",
+            value=redis_cluster.attr_redis_endpoint_port,
+            description="ElastiCache Redis Port",
         )
 
         core.CfnOutput(
@@ -129,35 +136,51 @@ class FinAdvisorStack(core.Stack):
 
         return db_instance
 
-    def _create_dynamodb_table(self) -> dynamodb.Table:
-        """Create DynamoDB table for memory persistence"""
+    def _create_redis_cluster(self, vpc: ec2.Vpc) -> elasticache.CfnCacheCluster:
+        """Create ElastiCache Redis cluster for STM (Short-Term Memory)"""
 
-        table = dynamodb.Table(
+        # Create security group for Redis
+        redis_security_group = ec2.SecurityGroup(
             self,
-            "FinAdvisorMemory",
-            partition_key=dynamodb.Attribute(
-                name="client_id", type=dynamodb.AttributeType.STRING
-            ),
-            sort_key=dynamodb.Attribute(
-                name="timestamp", type=dynamodb.AttributeType.STRING
-            ),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            time_to_live_attribute="ttl",
-            removal_policy=core.RemovalPolicy.DESTROY,
+            "RedisSecurityGroup",
+            vpc=vpc,
+            allow_all_outbound=True,
+            description="Security group for ElastiCache Redis",
         )
 
-        # Add GSI for queries by timestamp
-        table.add_global_secondary_index(
-            index_name="TimestampIndex",
-            partition_key=dynamodb.Attribute(
-                name="timestamp", type=dynamodb.AttributeType.STRING
-            ),
-            sort_key=dynamodb.Attribute(
-                name="client_id", type=dynamodb.AttributeType.STRING
-            ),
+        # Allow Lambda to connect to Redis
+        redis_security_group.add_ingress_rule(
+            peer=ec2.Peer.ipv4("10.0.0.0/16"),
+            connection=ec2.Port.tcp(6379),
+            description="Allow Lambda to Redis",
         )
 
-        return table
+        # Create subnet group for Redis
+        redis_subnet_group = elasticache.CfnSubnetGroup(
+            self,
+            "RedisSubnetGroup",
+            description="Subnet group for ElastiCache Redis",
+            subnet_ids=[subnet.subnet_id for subnet in vpc.private_subnets],
+        )
+
+        # Create Redis cluster
+        redis_cluster = elasticache.CfnCacheCluster(
+            self,
+            "FinAdvisorRedis",
+            cache_node_type="cache.t3.micro",
+            engine="redis",
+            num_cache_nodes=1,
+            vpc_security_group_ids=[redis_security_group.security_group_id],
+            cache_subnet_group_name=redis_subnet_group.ref,
+            engine_version="7.0",
+            port=6379,
+            snapshot_retention_limit=0,  # No snapshots for dev
+            auto_minor_version_upgrade=True,
+        )
+
+        redis_cluster.add_depends_on(redis_subnet_group)
+
+        return redis_cluster
 
     def _create_s3_bucket(self) -> s3.Bucket:
         """Create S3 bucket for data and logs"""
@@ -173,7 +196,7 @@ class FinAdvisorStack(core.Stack):
         return bucket
 
     def _create_lambda_role(
-        self, db_instance: rds.DatabaseInstance, table: dynamodb.Table, bucket: s3.Bucket
+        self, db_instance: rds.DatabaseInstance, bucket: s3.Bucket
     ) -> iam.Role:
         """Create IAM role for Lambda functions"""
 
@@ -193,9 +216,6 @@ class FinAdvisorStack(core.Stack):
 
         # RDS access
         db_instance.grant_connect(role, "postgres")
-
-        # DynamoDB access
-        table.grant_read_write_data(role)
 
         # S3 access
         bucket.grant_read_write(role)
@@ -258,7 +278,7 @@ class FinAdvisorStack(core.Stack):
         self,
         role: iam.Role,
         db_instance: rds.DatabaseInstance,
-        memory_table: dynamodb.Table,
+        redis_cluster: elasticache.CfnCacheCluster,
         vpc: ec2.Vpc,
     ) -> lambda_.Function:
         """Create main Orchestrator Lambda"""
@@ -275,11 +295,19 @@ class FinAdvisorStack(core.Stack):
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             environment={
+                # PostgreSQL (LTM)
                 "DB_HOST": db_instance.db_instance_endpoint_address,
+                "DB_PORT": "5432",
                 "DB_NAME": "finadvisor",
                 "DB_USER": "postgres",
-                "MEMORY_TABLE": memory_table.table_name,
+                # Redis (STM)
+                "REDIS_HOST": redis_cluster.attr_redis_endpoint_address,
+                "REDIS_PORT": redis_cluster.attr_redis_endpoint_port,
+                # AWS
                 "AWS_REGION": self.region,
+                # Model provider (Bedrock)
+                "MODEL_PROVIDER": "bedrock",
+                "MODEL_NAME": "anthropic.claude-3-5-sonnet-20241022-v2:0",
             },
         )
 
