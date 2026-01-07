@@ -73,7 +73,7 @@ def hard_goals_compliance(run, example) -> Dict[str, Any]:
         # Check risk compliance
         if "max_risk_level" in hard_goals:
             metrics = recommendation.get("metrics") if recommendation else None
-            portfolio_risk = metrics.get("expected_volatility", 0) if isinstance(metrics, dict) else 0
+            portfolio_risk = (metrics.get("expected_volatility") or 0) if isinstance(metrics, dict) else 0
             max_risk = hard_goals["max_risk_level"]
             if portfolio_risk > max_risk:
                 violations.append(f"Risk {portfolio_risk:.2%} exceeds max {max_risk:.2%}")
@@ -81,14 +81,14 @@ def hard_goals_compliance(run, example) -> Dict[str, Any]:
         # Check horizon compliance
         if "min_horizon_months" in hard_goals:
             client_profile = outputs.get("client_profile") if outputs else None
-            client_horizon = client_profile.get("investment_horizon_months", 0) if isinstance(client_profile, dict) else 0
+            client_horizon = (client_profile.get("investment_horizon_months") or 0) if isinstance(client_profile, dict) else 0
             min_horizon = hard_goals["min_horizon_months"]
             if client_horizon < min_horizon:
                 violations.append(f"Horizon {client_horizon} months < minimum {min_horizon} months")
 
         # Check minimum amount
         if "min_amount" in hard_goals:
-            amount = outputs.get("amount", 0)
+            amount = outputs.get("amount") or 0
             min_amount = hard_goals["min_amount"]
             if amount < min_amount:
                 violations.append(f"Amount ${amount} < minimum ${min_amount}")
