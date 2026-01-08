@@ -26,13 +26,16 @@ class PostgreSQLServer:
 
     @staticmethod
     def _convert_decimals(data):
-        """Convert Decimal values to float for JSON compatibility"""
+        """Convert Decimal and datetime values for JSON compatibility"""
+        from datetime import datetime, date
         if isinstance(data, dict):
             return {k: PostgreSQLServer._convert_decimals(v) for k, v in data.items()}
         elif isinstance(data, list):
             return [PostgreSQLServer._convert_decimals(item) for item in data]
         elif isinstance(data, Decimal):
             return float(data)
+        elif isinstance(data, (datetime, date)):
+            return data.isoformat()
         return data
 
     def connect(self):
@@ -142,8 +145,7 @@ class PostgreSQLServer:
                 p.name,
                 p.type,
                 p.annual_rate,
-                p.liquidity,
-                p.description
+                p.liquidity
             FROM client_portfolios cp
             JOIN products p ON cp.product_id = p.id
             WHERE cp.client_id = %s
@@ -163,8 +165,7 @@ class PostgreSQLServer:
                     "liquidity": row['liquidity'],
                     "allocation_percentage": float(row['allocation_percentage']) if row['allocation_percentage'] else 0,
                     "allocation_amount": float(row['allocation_amount']) if row['allocation_amount'] else 0,
-                    "purchase_date": str(row['purchase_date']) if row['purchase_date'] else None,
-                    "description": row['description']
+                    "purchase_date": str(row['purchase_date']) if row['purchase_date'] else None
                 })
 
             return {

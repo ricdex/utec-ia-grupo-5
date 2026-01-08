@@ -21,19 +21,19 @@ class FinancialGuardrails:
     # Risk profile allocation limits
     PROFILE_LIMITS = {
         "conservador": {
-            "conservador": (50, 100),
-            "moderado": (0, 40),
-            "agresivo": (0, 20)
+            "conservador": (70, 100),  # Minimum 70% in conservative products
+            "moderado": (0, 30),        # Maximum 30% in moderate products
+            "agresivo": (0, 0)          # NO aggressive products for conservative profile
         },
         "moderado": {
             "conservador": (20, 60),
-            "moderado": (20, 60),
-            "agresivo": (0, 40)
+            "moderado": (30, 70),       # Increased minimum for moderate products
+            "agresivo": (0, 30)         # Reduced max for aggressive products
         },
         "agresivo": {
-            "conservador": (0, 40),
-            "moderado": (10, 50),
-            "agresivo": (20, 70)
+            "conservador": (0, 30),
+            "moderado": (10, 40),
+            "agresivo": (40, 80)        # Increased minimum for aggressive products
         }
     }
 

@@ -1,4 +1,5 @@
 anthropic>=0.40.0
+openai>=1.0.0
 psycopg2-binary==2.9.9
 boto3==1.34.0
 aws-cdk-lib==2.125.0
@@ -12,6 +13,7 @@ streamlit==1.28.1
 fastapi>=0.115.0
 uvicorn==0.24.0
 mcp>=1.0.0
+redis==5.0.1
 
 # LangSmith evaluation
 langsmith>=0.4.59
