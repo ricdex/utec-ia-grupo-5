@@ -1,5 +1,9 @@
 .PHONY: help install up down logs seed backend frontend test clean docker-logs db-connect
 
+# Load environment variables from .env file
+-include .env
+export
+
 # Colors
 CYAN := \033[0;36m
 GREEN := \033[0;32m
@@ -40,6 +44,12 @@ help:
 	@echo "  make test .............. Run all tests"
 	@echo "  make test-local ........ Run local tests"
 	@echo "  make test-coverage ..... Run tests with coverage"
+	@echo ""
+	@echo "$(GREEN)📊 Evaluation:$(NC)"
+	@echo "  make eval-status ....... Check LangSmith configuration"
+	@echo "  make eval-quick ........ Quick evaluation (no LLM judge)"
+	@echo "  make eval .............. Full evaluation with all metrics"
+	@echo "  make eval-baseline ..... Create baseline snapshot"
 	@echo ""
 	@echo "$(GREEN)🔍 Verificación:$(NC)"
 	@echo "  make verify-redis ...... Verificar Redis (STM conversaciones)"
@@ -368,6 +378,7 @@ clean-volumes:
 	@echo "  make docker-seed"
 
 # ============================================================
+<<<<<<< HEAD
 # AWS CLOUD DEPLOYMENT
 # ============================================================
 
@@ -425,3 +436,87 @@ destroy-aws:
 update-aws:
 	@echo "$(CYAN)🔄 Updating AWS deployment...$(NC)"
 	@bash scripts/deploy_cloud.sh
+=======
+# LANGSMITH EVALUATION
+# ============================================================
+
+eval-setup:
+	@echo "$(CYAN)Setting up LangSmith evaluation...$(NC)"
+	@if [ -z "$${LANGCHAIN_API_KEY}" ]; then \
+		echo "$(RED)ERROR: LANGCHAIN_API_KEY not set$(NC)"; \
+		echo "$(YELLOW)Get your key from https://smith.langchain.com/settings$(NC)"; \
+		echo "$(YELLOW)Add to .env: LANGCHAIN_API_KEY=lsv2_pt_...$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)✓ LangSmith configured$(NC)"
+	@echo "  Project: $${LANGCHAIN_PROJECT:-finadvisor-evaluation}"
+	@echo "  Dashboard: https://smith.langchain.com"
+
+eval-prereq: eval-setup
+	@echo "$(CYAN)Checking evaluation prerequisites...$(NC)"
+	@docker exec finadvisor-postgres pg_isready -U postgres > /dev/null 2>&1 || \
+		(echo "$(RED)ERROR: PostgreSQL not ready. Run: make docker-up$(NC)" && exit 1)
+	@docker exec finadvisor-redis redis-cli ping > /dev/null 2>&1 || \
+		(echo "$(RED)ERROR: Redis not ready. Run: make docker-up$(NC)" && exit 1)
+	@docker exec finadvisor-postgres psql -U postgres -d finadvisor -t -c \
+		"SELECT COUNT(*) FROM products;" 2>/dev/null | grep -q -v '^[[:space:]]*0' || \
+		(echo "$(RED)ERROR: Database not seeded. Run: make docker-seed$(NC)" && exit 1)
+	@python3 -c "import langsmith" 2>/dev/null || \
+		(echo "$(RED)ERROR: langsmith not installed. Run: make install$(NC)" && exit 1)
+	@echo "$(GREEN)✓ All prerequisites met$(NC)"
+
+eval-quick: eval-prereq
+	@echo "$(CYAN)🚀 Running quick evaluation (no LLM judge)...$(NC)"
+	@echo "$(YELLOW)This will take ~5-10 minutes$(NC)"
+	@echo ""
+	@LANGCHAIN_TRACING_V2=true python3 backend/evaluation/run_evaluation.py \
+		--no-llm-judge \
+		--experiment-prefix "quick-$(shell date +%H%M%S)"
+	@echo ""
+	@echo "$(GREEN)✓ Evaluation complete!$(NC)"
+	@echo "$(CYAN)View results: https://smith.langchain.com$(NC)"
+
+eval: eval-prereq
+	@echo "$(CYAN)🚀 Running full evaluation (with LLM judge)...$(NC)"
+	@echo "$(YELLOW)This will take ~10-15 minutes$(NC)"
+	@echo ""
+	@LANGCHAIN_TRACING_V2=true python3 backend/evaluation/run_evaluation.py \
+		--experiment-prefix "dev-$(shell date +%Y%m%d-%H%M%S)"
+	@echo ""
+	@echo "$(GREEN)✓ Evaluation complete!$(NC)"
+	@echo "$(CYAN)View results: https://smith.langchain.com$(NC)"
+
+eval-baseline: eval-prereq
+	@echo "$(CYAN)🚀 Running baseline evaluation...$(NC)"
+	@echo "$(YELLOW)This creates a baseline for comparison$(NC)"
+	@echo ""
+	@LANGCHAIN_TRACING_V2=true python3 backend/evaluation/run_evaluation.py \
+		--experiment-prefix "baseline-$(shell date +%Y%m%d)"
+	@echo ""
+	@echo "$(GREEN)✓ Baseline evaluation complete!$(NC)"
+	@echo "$(CYAN)View results: https://smith.langchain.com$(NC)"
+
+eval-status:
+	@echo "$(CYAN)📊 LangSmith Evaluation Status$(NC)"
+	@echo ""
+	@if [ -z "$${LANGCHAIN_API_KEY}" ]; then \
+		echo "$(RED)Status: NOT CONFIGURED$(NC)"; \
+		echo ""; \
+		echo "$(YELLOW)Setup steps:$(NC)"; \
+		echo "  1. Get API key from https://smith.langchain.com/settings"; \
+		echo "  2. Add to .env: LANGCHAIN_API_KEY=lsv2_pt_..."; \
+		echo "  3. Run: make eval-setup"; \
+	else \
+		echo "$(GREEN)Status: CONFIGURED ✓$(NC)"; \
+		echo ""; \
+		echo "$(CYAN)Configuration:$(NC)"; \
+		echo "  API Key: $$LANGCHAIN_API_KEY" | sed 's/\(.\{20\}\).*/\1.../'; \
+		echo "  Project: $${LANGCHAIN_PROJECT:-finadvisor-evaluation}"; \
+		echo "  Dashboard: https://smith.langchain.com"; \
+		echo ""; \
+		echo "$(CYAN)Available commands:$(NC)"; \
+		echo "  make eval-quick ...... Fast evaluation (~5-10 min)"; \
+		echo "  make eval ............ Full evaluation (~10-15 min)"; \
+		echo "  make eval-baseline ... Create baseline for comparison"; \
+	fi
+>>>>>>> main

@@ -12,7 +12,8 @@ from dataclasses import asdict
 from agent.memory_manager import MemoryManager
 from agent.rag_manager import RAGManager, RAGProductDatabase
 from utils.finance_calc import FinanceCalculator, SimulationEngine, ProductAllocation
-from utils.guardrails import FinancialGuardrails, GuardrailViolation
+from utils.guardrails import GuardrailViolation
+from utils.guardrails_provider import GuardrailsProviderFactory
 from utils.config import get_config
 from utils.llm_client import LLMClientFactory
 from mcp_servers.postgres_server import PostgreSQLServer
@@ -59,6 +60,13 @@ class FinAdvisor:
 
         # Initialize memory
         self.memory = MemoryManager(client_id)
+
+        # Initialize guardrails provider
+        self.guardrails_provider = GuardrailsProviderFactory.create_from_config(config)
+
+        # Storage for evaluators (last tool call results)
+        self.last_recommendation = None
+        self.last_guardrails = None
 
         # System prompt with context
         self.system_prompt = self._build_system_prompt()
@@ -493,7 +501,7 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
 
             # Build recommendation with real data (NO SIMULATIONS)
             recommendation = {
-                "allocations": [
+                "allocation": [  # Changed to "allocation" (singular) to match evaluators
                     {
                         "product_id": a.product_id,
                         "product_name": a.product_name,
@@ -514,6 +522,9 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
                 "note": "No simulations - uses actual product characteristics"
             }
 
+            # Store for evaluators
+            self.last_recommendation = recommendation
+
             return json.dumps(recommendation)
 
         except Exception as e:
@@ -528,16 +539,17 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
             portfolio_allocation = params.get("portfolio_allocation", [])
             expected_return = params.get("expected_return", 0)
 
-            is_valid, violations = FinancialGuardrails.validate_recommendation(
+            # Use guardrails provider (local or bedrock)
+            is_valid, violations = self.guardrails_provider.validate_recommendation(
                 client_profile,
                 portfolio_allocation,
                 expected_return
             )
 
-            needs_escalation = FinancialGuardrails.needs_human_escalation(violations)
-            disclaimer = FinancialGuardrails.generate_disclaimer()
+            needs_escalation = self.guardrails_provider.needs_human_escalation(violations)
+            disclaimer = self.guardrails_provider.generate_disclaimer()
 
-            return json.dumps({
+            guardrails_result = {
                 "is_valid": is_valid,
                 "violations": [
                     {
@@ -550,7 +562,12 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
                 ],
                 "needs_escalation": needs_escalation,
                 "disclaimer": disclaimer
-            })
+            }
+
+            # Store for evaluators
+            self.last_guardrails = guardrails_result
+
+            return json.dumps(guardrails_result)
 
         except Exception as e:
             logger.error(f"Guardrail validation error: {e}")
