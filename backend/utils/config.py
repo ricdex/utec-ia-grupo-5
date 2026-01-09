@@ -153,6 +153,22 @@ class Config:
         """Get logging level"""
         return os.getenv("LOG_LEVEL", self.config.get("logging", {}).get("level", "INFO"))
 
+    # Guardrails Configuration
+    def get_guardrails_provider(self) -> str:
+        """Get guardrails provider (local or bedrock)"""
+        return os.getenv(
+            "GUARDRAILS_PROVIDER",
+            self.config.get("guardrails", {}).get("provider", "local")
+        )
+
+    def get_bedrock_guardrail_id(self) -> str:
+        """Get Bedrock Guardrail ID"""
+        return os.getenv("AWS_BEDROCK_GUARDRAIL_ID", "")
+
+    def get_bedrock_guardrail_version(self) -> str:
+        """Get Bedrock Guardrail version"""
+        return os.getenv("AWS_BEDROCK_GUARDRAIL_VERSION", "DRAFT")
+
     # Utility methods
     def update_model(self, provider: str, model_name: str):
         """Update model configuration at runtime"""
