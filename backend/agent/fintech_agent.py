@@ -5,14 +5,26 @@ Orchestrates portfolio recommendations using LLM, MCP tools, RAG, and memory
 
 import json
 import logging
+import os
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
 from dataclasses import asdict
 
+# LangSmith tracing (optional, graceful degradation if not available)
+try:
+    from langsmith import traceable
+    from langsmith import Client as LangSmithClient
+    LANGSMITH_AVAILABLE = True
+except ImportError:
+    # Fallback decorator if langsmith not installed
+    def traceable(func):
+        return func
+    LANGSMITH_AVAILABLE = False
+
 from agent.memory_manager import MemoryManager
 from agent.rag_manager import RAGManager, RAGProductDatabase
 from utils.finance_calc import FinanceCalculator, SimulationEngine, ProductAllocation
-from utils.guardrails import GuardrailViolation
+from utils.guardrails import GuardrailViolation, FinancialGuardrails
 from utils.guardrails_provider import GuardrailsProviderFactory
 from utils.config import get_config
 from utils.llm_client import LLMClientFactory
@@ -290,9 +302,15 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
             }
         ]
 
+    @traceable(
+        name="finadvisor_chat",
+        run_type="chain",
+        metadata={"agent": "fintech_advisor"}
+    )
     def chat(self, user_message: str) -> str:
         """
         Main chat method - implements agentic loop with tools
+        Decorated with @traceable for LangSmith monitoring
         """
 
         # Add message to STM
@@ -358,6 +376,16 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
                     except AttributeError:
                         # Fallback to dict access (Ollama/Bedrock)
                         final_response = content_block.get("text", "")
+
+                # Validate message compliance (defense-in-depth)
+                is_compliant, violations = FinancialGuardrails.validate_message_compliance(final_response)
+
+                if not is_compliant:
+                    logger.warning(f"Message compliance violations detected: {violations}")
+                    # Sanitize the message to replace prohibited language
+                    final_response = FinancialGuardrails.sanitize_message(final_response)
+                    logger.info(f"Message sanitized to ensure compliance")
+
                 self.memory.add_assistant_message(final_response)
                 return final_response
             else:
@@ -372,16 +400,20 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
 
         messages = []
 
-        # Add conversation context
-        conv_context = self.memory.get_conversation_context()
-        if conv_context:
-            messages.append({
-                "role": "user",
-                "content": f"[Contexto de conversación anterior]\n{conv_context}\n\n[Nuevo mensaje del usuario arriba]"
-            })
+        # Get recent messages from history
+        history = self.memory.get_conversation_history(last_n=5)
 
-        # Add recent messages
-        for msg in self.memory.get_conversation_history(last_n=5):
+        # Add conversation context to the first user message if available
+        conv_context = self.memory.get_conversation_context()
+        if conv_context and history:
+            # Find the first user message and prepend context to it
+            for i, msg in enumerate(history):
+                if msg["role"] == "user":
+                    history[i]["content"] = f"[Contexto de conversación anterior]\n{conv_context}\n\n[Mensaje del usuario]\n{msg['content']}"
+                    break
+
+        # Add all messages from history
+        for msg in history:
             messages.append({
                 "role": msg["role"],
                 "content": msg["content"]
@@ -389,8 +421,9 @@ No ejecutas operaciones reales. Requieres confirmación humana para cualquier in
 
         return messages
 
+    @traceable(name="execute_tool", run_type="tool")
     def _execute_tool(self, tool_name: str, tool_input: Dict) -> str:
-        """Execute tool and return result"""
+        """Execute tool and return result (decorated for LangSmith tracing)"""
 
         try:
             if tool_name == "query_eligible_products":

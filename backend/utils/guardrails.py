@@ -3,6 +3,7 @@ Financial advisor guardrails and compliance rules
 Ensures recommendations meet regulatory and safety requirements
 """
 
+import re
 from typing import Dict, Tuple, List
 from dataclasses import dataclass
 
@@ -233,3 +234,82 @@ La cartera que te recomendamos logra un equilibrio entre tus objetivos:
             return (False, "Horizonte mínimo recomendado: 6 meses")
 
         return (True, "")
+
+    @staticmethod
+    def validate_message_compliance(message: str) -> Tuple[bool, List[str]]:
+        """
+        Validate that message doesn't contain prohibited language
+        This provides defense-in-depth alongside Bedrock Guardrails
+
+        Returns (is_compliant, list_of_violations)
+        """
+
+        violations = []
+
+        # Prohibited patterns (synchronized with Bedrock Guardrails)
+        prohibited_patterns = {
+            r'\bgarantizado\b': "Uso de 'garantizado' está prohibido (retornos no garantizables)",
+            r'\bgarantizada\b': "Uso de 'garantizada' está prohibido (retornos no garantizables)",
+            r'\bsin riesgo\b': "Uso de 'sin riesgo' está prohibido (toda inversión tiene riesgo)",
+            r'\b100%\s*segur[oa]\b': "Uso de '100% seguro' está prohibido (ninguna inversión es 100% segura)",
+            r'\bganancias\s+aseguradas\b': "Uso de 'ganancias aseguradas' está prohibido",
+            r'\bretorno\s+garantizado\b': "Uso de 'retorno garantizado' está prohibido",
+            r'\btotalmente\s+segur[oa]\b': "Uso de 'totalmente seguro' está prohibido",
+            r'\bcero\s+riesgo\b': "Uso de 'cero riesgo' está prohibido",
+            r'\bprometo\b': "No se pueden hacer promesas sobre retornos de inversión",
+            r'\bte\s+garantizo\b': "No se pueden garantizar retornos de inversión",
+        }
+
+        # Prohibited topics (basic pattern matching)
+        prohibited_topics = {
+            r'\bcriptomoneda[s]?\b': "Recomendaciones de criptomonedas no autorizadas",
+            r'\bbitcoin\b': "Recomendaciones de criptomonedas no autorizadas",
+            r'\betherenum\b': "Recomendaciones de criptomonedas no autorizadas",
+            r'\bforex\b(?!.*regulado)': "Forex no regulado no está autorizado",
+            r'\besquema\s+piramidal\b': "Esquemas piramidales están prohibidos",
+            r'\bmultinivel\b': "Esquemas multinivel están prohibidos",
+            r'\binformaci[óo]n\s+privilegiada\b': "Insider trading está prohibido",
+            r'\binformaci[óo]n\s+interna\b': "Insider trading está prohibido",
+            r'\bevadir\s+impuestos\b': "Evasión fiscal está prohibida",
+            r'\besconder\s+dinero\b': "Ocultamiento de activos está prohibido",
+            r'\bel\s+mercado\s+va\s+a\s+colapsar\b': "Predicciones especulativas no permitidas",
+            r'\bel\s+precio\s+va\s+a\s+subir\b': "Predicciones especulativas no permitidas",
+        }
+
+        # Check prohibited words/phrases
+        for pattern, reason in prohibited_patterns.items():
+            if re.search(pattern, message, re.IGNORECASE):
+                violations.append(f"Lenguaje prohibido detectado: {reason}")
+
+        # Check prohibited topics
+        for pattern, reason in prohibited_topics.items():
+            if re.search(pattern, message, re.IGNORECASE):
+                violations.append(f"Tema prohibido detectado: {reason}")
+
+        is_compliant = len(violations) == 0
+        return (is_compliant, violations)
+
+    @staticmethod
+    def sanitize_message(message: str) -> str:
+        """
+        Sanitize message by replacing prohibited language with compliant alternatives
+        """
+
+        replacements = {
+            r'\bgarantizado\b': 'esperado',
+            r'\bgarantizada\b': 'esperada',
+            r'\bsin riesgo\b': 'con riesgo controlado',
+            r'\b100%\s*segur[oa]\b': 'relativamente seguro',
+            r'\bganancias\s+aseguradas\b': 'ganancias potenciales',
+            r'\bretorno\s+garantizado\b': 'retorno esperado',
+            r'\btotalmente\s+segur[oa]\b': 'relativamente seguro',
+            r'\bcero\s+riesgo\b': 'riesgo bajo',
+            r'\bprometo\b': 'proyecto',
+            r'\bte\s+garantizo\b': 'se espera',
+        }
+
+        sanitized = message
+        for pattern, replacement in replacements.items():
+            sanitized = re.sub(pattern, replacement, sanitized, flags=re.IGNORECASE)
+
+        return sanitized

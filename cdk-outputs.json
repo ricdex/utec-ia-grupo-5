@@ -1,0 +1,16 @@
+{
+  "FinAdvisorStack6": {
+    "RedisEndpoint": "fin-fi-iq8kdvh4yna8.sog2hx.0001.use1.cache.amazonaws.com",
+    "FinAdvisorApiEndpointCB4FCF04": "https://15cnhh5rhk.execute-api.us-east-1.amazonaws.com/prod/",
+    "RedisPort": "6379",
+    "DataBucketName": "finadvisorstack6-finadvisordata2108a065-vcb3021a7wty",
+    "DbEndpoint": "finadvisorstack6-finadvisordb66cf7bbb-y5j988omfpd8.clsmg9yrqa74.us-east-1.rds.amazonaws.com",
+    "BedrockGuardrailId": "phppousbt0ei",
+    "BedrockGuardrailArn": "arn:aws:bedrock:us-east-1:469132838286:guardrail/phppousbt0ei",
+    "DbSecretArn": "arn:aws:secretsmanager:us-east-1:469132838286:secret:FinAdvisorDbSecretA3910BF5-DVgmfFu6ttxP-iVO5IS",
+    "ApiEndpoint": "https://15cnhh5rhk.execute-api.us-east-1.amazonaws.com/prod/",
+    "BackendEcrRepo": "469132838286.dkr.ecr.us-east-1.amazonaws.com/finadvisor-backend",
+    "FrontendUrl": "http://13.219.45.174:8501",
+    "FrontendEcrRepo": "469132838286.dkr.ecr.us-east-1.amazonaws.com/finadvisor-frontend"
+  }
+}

@@ -298,10 +298,10 @@ class TestFinAdvisorAgentE2E:
 class TestLambdaOrchestratorE2E:
     """End-to-end tests for Lambda Orchestrator"""
 
-    @patch("backend.lambda_orchestrator.handler.FinAdvisor")
+    @patch("backend.orchestrator.cloud.FinAdvisor")
     def test_lambda_health_endpoint(self, mock_agent):
         """Test Lambda health check endpoint"""
-        from backend.lambda_orchestrator.handler import lambda_handler
+        from backend.orchestrator.cloud import lambda_handler
 
         event = {
             "httpMethod": "GET",
@@ -315,10 +315,10 @@ class TestLambdaOrchestratorE2E:
         assert body["status"] == "healthy"
         assert body["service"] == "FinAdvisor"
 
-    @patch("backend.lambda_orchestrator.handler.FinAdvisor")
+    @patch("backend.orchestrator.cloud.FinAdvisor")
     def test_lambda_chat_endpoint(self, mock_agent_class):
         """Test Lambda chat endpoint"""
-        from backend.lambda_orchestrator.handler import lambda_handler
+        from backend.orchestrator.cloud import lambda_handler
 
         # Mock the agent
         mock_agent = MagicMock()
@@ -341,10 +341,10 @@ class TestLambdaOrchestratorE2E:
         assert "response" in body
         assert body["client_id"] == "TEST_CLI_001"
 
-    @patch("backend.lambda_orchestrator.handler.FinAdvisor")
+    @patch("backend.orchestrator.cloud.FinAdvisor")
     def test_lambda_recommendation_endpoint(self, mock_agent_class):
         """Test Lambda recommendation endpoint"""
-        from backend.lambda_orchestrator.handler import lambda_handler
+        from backend.orchestrator.cloud import lambda_handler
 
         mock_agent = MagicMock()
         mock_agent._build_portfolio.return_value = json.dumps({

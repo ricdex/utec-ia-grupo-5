@@ -1,7 +1,7 @@
 .PHONY: help install up down logs seed backend frontend test clean docker-logs db-connect
 
-# Load environment variables from .env file
--include .env
+# Load environment variables from .env.local file (for local development)
+-include .env.local
 export
 
 # Colors
@@ -67,21 +67,31 @@ help:
 	@echo "  make health ............ Check service health"
 	@echo "  make clean ............. Stop and remove all containers"
 	@echo "  make clean-volumes ..... Stop and remove all volumes (⚠️ deletes data)"
-	@echo "  make env ............... Create .env from .env.example"
+	@echo "  make env ............... Create .env.local and .env.cloud from examples"
 	@echo "  make help .............. Show this message"
 	@echo ""
 	@echo "$(GREEN)☁️  AWS Cloud Deployment:$(NC)"
-	@echo "  make deploy-aws ........ Deploy to AWS (full stack + seed)"
-	@echo "  make update-aws ........ Update AWS deployment"
-	@echo "  make destroy-aws ....... Destroy all AWS resources"
+	@echo "  make deploy-aws .......... Deploy to AWS (full stack + seed)"
+	@echo "  make seed-aws ............ Seed AWS database (if not done)"
+	@echo "  make update-aws .......... Update AWS deployment"
+	@echo "  make update-frontend-aws . Update only Streamlit frontend"
+	@echo "  make destroy-aws ......... Destroy all AWS resources"
 
 # Environment setup
 env:
-	@if [ ! -f .env ]; then \
-		cp .env.example .env; \
-		echo "$(GREEN)✓ .env created$(NC)"; \
+	@if [ ! -f .env.local ]; then \
+		cp .env.local.example .env.local; \
+		echo "$(GREEN)✓ .env.local created for local development$(NC)"; \
+		echo "$(CYAN)Edit .env.local and add your API keys$(NC)"; \
 	else \
-		echo "$(YELLOW)⚠ .env already exists$(NC)"; \
+		echo "$(YELLOW)⚠ .env.local already exists$(NC)"; \
+	fi
+	@if [ ! -f .env.cloud ]; then \
+		cp .env.cloud.example .env.cloud; \
+		echo "$(GREEN)✓ .env.cloud created for AWS deployment$(NC)"; \
+		echo "$(CYAN)Edit .env.cloud and add your LangSmith API key$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ .env.cloud already exists$(NC)"; \
 	fi
 
 install:
@@ -156,7 +166,7 @@ seed:
 backend:
 	@echo "$(CYAN)Starting backend server...$(NC)"
 	@echo "  API: http://localhost:8000"
-	python3 backend/lambda_orchestrator/local_server.py
+	python3 backend/orchestrator/local.py
 
 frontend:
 	@echo "$(CYAN)Starting Streamlit frontend...$(NC)"
@@ -267,7 +277,7 @@ quick-start: docker-build docker-up
 	@echo "  Backend:   http://localhost:8000"
 	@echo "  API Docs:  http://localhost:8000/docs"
 	@echo ""
-	@echo "$(YELLOW)⚠️  IMPORTANT: Make sure your OPENAI_API_KEY is set in .env$(NC)"
+	@echo "$(YELLOW)⚠️  IMPORTANT: Make sure your OPENAI_API_KEY is set in .env.local$(NC)"
 	@echo ""
 	@echo "$(CYAN)Useful commands:$(NC)"
 	@echo "  make docker-logs ..... View all logs"
@@ -378,7 +388,6 @@ clean-volumes:
 	@echo "  make docker-seed"
 
 # ============================================================
-<<<<<<< HEAD
 # AWS CLOUD DEPLOYMENT
 # ============================================================
 
@@ -396,7 +405,8 @@ deploy-aws:
 	@echo "$(YELLOW)⚠️  Make sure you have:${NC}"
 	@echo "  - AWS credentials configured (aws configure)"
 	@echo "  - Bedrock access enabled in your region"
-	@echo "  - .env file with required variables"
+	@echo "  - .env.cloud file configured with LangSmith API key"
+	@echo "  - Run: export \$$(cat .env.cloud | xargs) before deploying"
 	@echo ""
 	@bash scripts/deploy_cloud.sh
 
@@ -436,7 +446,106 @@ destroy-aws:
 update-aws:
 	@echo "$(CYAN)🔄 Updating AWS deployment...$(NC)"
 	@bash scripts/deploy_cloud.sh
-=======
+
+seed-aws:
+	@echo "$(CYAN)🌱 Seeding AWS database...$(NC)"
+	@echo ""
+	@STACK_NAME=FinAdvisorStack6; \
+	DB_ENDPOINT=$$(aws cloudformation describe-stacks \
+		--stack-name $$STACK_NAME \
+		--region $${AWS_REGION:-us-east-1} \
+		--query "Stacks[0].Outputs[?OutputKey=='DbEndpoint'].OutputValue" \
+		--output text 2>/dev/null); \
+	DB_SECRET_ARN=$$(aws cloudformation describe-stacks \
+		--stack-name $$STACK_NAME \
+		--region $${AWS_REGION:-us-east-1} \
+		--query "Stacks[0].Outputs[?OutputKey=='DbSecretArn'].OutputValue" \
+		--output text 2>/dev/null); \
+	if [ -z "$$DB_ENDPOINT" ] || [ -z "$$DB_SECRET_ARN" ]; then \
+		echo "$(RED)✗ Could not get database info from stack $$STACK_NAME$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "Retrieving database password..."; \
+	DB_PASSWORD=$$(aws secretsmanager get-secret-value \
+		--secret-id "$$DB_SECRET_ARN" \
+		--region $${AWS_REGION:-us-east-1} \
+		--query SecretString \
+		--output text | jq -r .password 2>/dev/null); \
+	if [ -z "$$DB_PASSWORD" ]; then \
+		echo "$(RED)✗ Could not retrieve database password$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "Database: $$DB_ENDPOINT"; \
+	echo "Checking database status..."; \
+	if ! PGPASSWORD="$$DB_PASSWORD" psql -h "$$DB_ENDPOINT" -U postgres -d finadvisor -c "SELECT 1" >/dev/null 2>&1; then \
+		echo "$(RED)✗ Cannot connect to database$(NC)"; \
+		echo "$(YELLOW)Database may still be initializing. Wait a few minutes and try again.$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "$(GREEN)✓ Database is ready$(NC)"; \
+	echo ""; \
+	echo "Loading data from CSV files..."; \
+	DB_HOST="$$DB_ENDPOINT" \
+	DB_PORT="5432" \
+	DB_NAME="finadvisor" \
+	DB_USER="postgres" \
+	DB_PASSWORD="$$DB_PASSWORD" \
+	python3 scripts/seed_database.py || { \
+		echo "$(RED)✗ Database seeding failed$(NC)"; \
+		exit 1; \
+	}; \
+	echo "$(GREEN)✓ Database seeded successfully$(NC)"
+
+update-frontend-aws:
+	@echo "$(CYAN)🔄 Updating Streamlit frontend in AWS...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)This will:${NC}"
+	@echo "  1. Rebuild frontend Docker image"
+	@echo "  2. Push to ECR"
+	@echo "  3. Redeploy App Runner"
+	@echo ""
+	@echo "$(CYAN)[1/3] Building frontend image...${NC}"
+	@docker build -t finadvisor-frontend:latest -f frontend/Dockerfile . || { \
+		echo "$(RED)✗ Frontend build failed${NC}"; \
+		exit 1; \
+	}
+	@echo "$(GREEN)✓ Frontend image built${NC}"
+	@echo ""
+	@echo "$(CYAN)[2/3] Pushing to ECR...${NC}"
+	@aws ecr get-login-password --region $${AWS_REGION:-us-east-1} | \
+		docker login --username AWS --password-stdin $$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$${AWS_REGION:-us-east-1}.amazonaws.com || { \
+		echo "$(RED)✗ ECR login failed${NC}"; \
+		exit 1; \
+	}
+	@ACCOUNT_ID=$$(aws sts get-caller-identity --query Account --output text); \
+	REGION=$${AWS_REGION:-us-east-1}; \
+	docker tag finadvisor-frontend:latest $$ACCOUNT_ID.dkr.ecr.$$REGION.amazonaws.com/finadvisor-frontend:latest; \
+	docker push $$ACCOUNT_ID.dkr.ecr.$$REGION.amazonaws.com/finadvisor-frontend:latest || { \
+		echo "$(RED)✗ Push to ECR failed${NC}"; \
+		exit 1; \
+	}
+	@echo "$(GREEN)✓ Image pushed to ECR${NC}"
+	@echo ""
+	@echo "$(CYAN)[3/3] Redeploying App Runner...${NC}"
+	@cd infra && \
+	export DEPLOY_FRONTEND=true && \
+	cdk deploy FinAdvisorStack6 --require-approval never --outputs-file ../cdk-outputs.json || { \
+		echo "$(RED)✗ App Runner deployment failed${NC}"; \
+		exit 1; \
+	}
+	@cd ..
+	@echo ""
+	@echo "$(GREEN)✓ Frontend updated successfully!${NC}"
+	@if [ -f "cdk-outputs.json" ]; then \
+		FRONTEND_URL=$$(jq -r '.FinAdvisorStack6.FrontendUrl // empty' cdk-outputs.json); \
+		if [ -n "$$FRONTEND_URL" ]; then \
+			echo ""; \
+			echo "$(CYAN)🌐 Frontend URL:${NC}"; \
+			echo "   $$FRONTEND_URL"; \
+		fi; \
+	fi
+
+# ============================================================
 # LANGSMITH EVALUATION
 # ============================================================
 
@@ -445,7 +554,7 @@ eval-setup:
 	@if [ -z "$${LANGCHAIN_API_KEY}" ]; then \
 		echo "$(RED)ERROR: LANGCHAIN_API_KEY not set$(NC)"; \
 		echo "$(YELLOW)Get your key from https://smith.langchain.com/settings$(NC)"; \
-		echo "$(YELLOW)Add to .env: LANGCHAIN_API_KEY=lsv2_pt_...$(NC)"; \
+		echo "$(YELLOW)Add to .env.local: LANGCHAIN_API_KEY=lsv2_pt_...$(NC)"; \
 		exit 1; \
 	fi
 	@echo "$(GREEN)✓ LangSmith configured$(NC)"
@@ -504,7 +613,7 @@ eval-status:
 		echo ""; \
 		echo "$(YELLOW)Setup steps:$(NC)"; \
 		echo "  1. Get API key from https://smith.langchain.com/settings"; \
-		echo "  2. Add to .env: LANGCHAIN_API_KEY=lsv2_pt_..."; \
+		echo "  2. Add to .env.local: LANGCHAIN_API_KEY=lsv2_pt_..."; \
 		echo "  3. Run: make eval-setup"; \
 	else \
 		echo "$(GREEN)Status: CONFIGURED ✓$(NC)"; \
@@ -519,4 +628,3 @@ eval-status:
 		echo "  make eval ............ Full evaluation (~10-15 min)"; \
 		echo "  make eval-baseline ... Create baseline for comparison"; \
 	fi
->>>>>>> main

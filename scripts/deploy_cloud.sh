@@ -16,7 +16,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # Default values
-STACK_NAME="${STACK_NAME:-FinAdvisorStack}"
+STACK_NAME="${STACK_NAME:-FinAdvisorStack6}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 PROFILE="${AWS_PROFILE:-default}"
 
@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --stack-name NAME    CloudFormation stack name (default: FinAdvisorStack)"
+            echo "  --stack-name NAME    CloudFormation stack name (default: FinAdvisorStack6)"
             echo "  --region REGION      AWS region (default: us-east-1)"
             echo "  --profile PROFILE    AWS profile (default: default)"
             echo "  --help               Show this help message"
@@ -164,7 +164,7 @@ echo ""
 # STEP 2: Build Docker Images
 # ============================================================
 
-echo -e "${CYAN}[2/6] Building Docker images...${NC}"
+echo -e "${CYAN}[2/7] Building Docker images...${NC}"
 
 # Build backend image
 echo "Building backend image..."
@@ -185,26 +185,81 @@ echo -e "${GREEN}✓ Frontend image built${NC}"
 echo ""
 
 # ============================================================
-# STEP 3: Deploy CDK Stack
+# STEP 3: Create ECR Repositories and Push Images
 # ============================================================
 
-echo -e "${CYAN}[3/6] Deploying infrastructure with CDK...${NC}"
+echo -e "${CYAN}[3/7] Preparing ECR repositories...${NC}"
+
+# Verify AWS credentials are still valid
+echo "Verifying AWS credentials..."
+if ! aws sts get-caller-identity --profile "$PROFILE" --region "$AWS_REGION" &> /dev/null; then
+    echo -e "${RED}✗ AWS credentials invalid or expired${NC}"
+    echo "Please run: aws configure --profile $PROFILE"
+    echo "Or refresh your temporary credentials"
+    exit 1
+fi
+echo -e "${GREEN}✓ AWS credentials valid${NC}"
+
+# Clean up existing ECR repositories if they exist (to let CDK create them)
+echo "Cleaning up existing ECR repositories..."
+
+# Delete backend repo if exists
+if aws ecr describe-repositories \
+    --repository-names finadvisor-backend \
+    --region "$AWS_REGION" \
+    --profile "$PROFILE" &> /dev/null; then
+    echo "Deleting existing backend repository..."
+    aws ecr delete-repository \
+        --repository-name finadvisor-backend \
+        --region "$AWS_REGION" \
+        --profile "$PROFILE" \
+        --force &> /dev/null || echo "Could not delete backend repo"
+fi
+
+# Delete frontend repo if exists
+if aws ecr describe-repositories \
+    --repository-names finadvisor-frontend \
+    --region "$AWS_REGION" \
+    --profile "$PROFILE" &> /dev/null; then
+    echo "Deleting existing frontend repository..."
+    aws ecr delete-repository \
+        --repository-name finadvisor-frontend \
+        --region "$AWS_REGION" \
+        --profile "$PROFILE" \
+        --force &> /dev/null || echo "Could not delete frontend repo"
+fi
+
+echo -e "${GREEN}✓ ECR repositories cleaned${NC}"
+echo ""
+
+# ============================================================
+# STEP 4: Deploy CDK Stack
+# ============================================================
+
+echo -e "${CYAN}[4/7] Deploying infrastructure with CDK...${NC}"
 
 cd infra
 
-# Install CDK dependencies
+# Install CDK dependencies (npm)
 if [ ! -d "node_modules" ]; then
-    echo "Installing CDK dependencies..."
+    echo "Installing CDK npm dependencies..."
     npm install
 fi
+
+# Install CDK dependencies (Python)
+echo "Installing CDK Python dependencies..."
+pip install -r requirements.txt || pip3 install -r requirements.txt || {
+    echo -e "${RED}✗ Failed to install Python dependencies${NC}"
+    exit 1
+}
 
 # Bootstrap CDK (if not already done)
 echo "Bootstrapping CDK..."
 cdk bootstrap aws://$ACCOUNT_ID/$AWS_REGION --profile "$PROFILE" || true
 
-# Deploy stack
-echo "Deploying stack: $STACK_NAME..."
-cdk deploy "$STACK_NAME" \
+# Deploy stack WITHOUT frontend (App Runner will be added after pushing images)
+echo "Deploying stack: $STACK_NAME (without frontend)..."
+DEPLOY_FRONTEND=false cdk deploy "$STACK_NAME" \
     --profile "$PROFILE" \
     --region "$AWS_REGION" \
     --require-approval never \
@@ -215,14 +270,14 @@ cdk deploy "$STACK_NAME" \
 
 cd ..
 
-echo -e "${GREEN}✓ Infrastructure deployed${NC}"
+echo -e "${GREEN}✓ Infrastructure deployed (without frontend)${NC}"
 echo ""
 
 # ============================================================
-# STEP 4: Extract Outputs
+# STEP 5: Extract Outputs
 # ============================================================
 
-echo -e "${CYAN}[4/7] Extracting deployment outputs...${NC}"
+echo -e "${CYAN}[5/7] Extracting deployment outputs...${NC}"
 
 if [ ! -f "cdk-outputs.json" ]; then
     echo -e "${RED}✗ CDK outputs file not found${NC}"
@@ -252,10 +307,10 @@ echo -e "${GREEN}✓ Outputs extracted${NC}"
 echo ""
 
 # ============================================================
-# STEP 5: Push Images to ECR
+# STEP 5.5: Push Docker Images to ECR
 # ============================================================
 
-echo -e "${CYAN}[5/7] Pushing Docker images to ECR...${NC}"
+echo -e "${CYAN}[5.5/7] Pushing Docker images to ECR...${NC}"
 
 # Login to ECR
 echo "Logging in to ECR..."
@@ -267,7 +322,7 @@ aws ecr get-login-password --region "$AWS_REGION" --profile "$PROFILE" | \
 echo -e "${GREEN}✓ ECR login successful${NC}"
 
 # Tag and push backend image
-echo "Pushing backend image..."
+echo "Pushing backend image to $BACKEND_ECR..."
 docker tag finadvisor-backend:latest "$BACKEND_ECR:latest"
 docker push "$BACKEND_ECR:latest" || {
     echo -e "${RED}✗ Backend image push failed${NC}"
@@ -276,7 +331,7 @@ docker push "$BACKEND_ECR:latest" || {
 echo -e "${GREEN}✓ Backend image pushed${NC}"
 
 # Tag and push frontend image
-echo "Pushing frontend image..."
+echo "Pushing frontend image to $FRONTEND_ECR..."
 docker tag finadvisor-frontend:latest "$FRONTEND_ECR:latest"
 docker push "$FRONTEND_ECR:latest" || {
     echo -e "${RED}✗ Frontend image push failed${NC}"
@@ -284,10 +339,38 @@ docker push "$FRONTEND_ECR:latest" || {
 }
 echo -e "${GREEN}✓ Frontend image pushed${NC}"
 
-# Trigger App Runner deployment
-echo "Waiting for App Runner to deploy new frontend image..."
-sleep 10
 echo -e "${GREEN}✓ Images deployed to ECR${NC}"
+echo ""
+
+# ============================================================
+# STEP 5.7: Deploy Frontend (App Runner)
+# ============================================================
+
+echo -e "${CYAN}[5.7/7] Deploying Streamlit frontend to App Runner...${NC}"
+
+cd infra
+
+echo "Deploying App Runner service..."
+DEPLOY_FRONTEND=true cdk deploy "$STACK_NAME" \
+    --profile "$PROFILE" \
+    --region "$AWS_REGION" \
+    --require-approval never \
+    --outputs-file ../cdk-outputs.json || {
+    echo -e "${RED}✗ Frontend deployment failed${NC}"
+    echo -e "${YELLOW}You can retry with: DEPLOY_FRONTEND=true cdk deploy $STACK_NAME${NC}"
+}
+
+cd ..
+
+# Re-extract outputs to get Frontend URL
+if [ -f "cdk-outputs.json" ]; then
+    FRONTEND_URL=$(jq -r ".[\"$STACK_NAME\"].FrontendUrl // empty" cdk-outputs.json)
+    if [ -n "$FRONTEND_URL" ]; then
+        echo -e "${GREEN}✓ Frontend deployed successfully${NC}"
+        echo "Frontend URL: $FRONTEND_URL"
+    fi
+fi
+
 echo ""
 
 # ============================================================
@@ -385,13 +468,23 @@ echo -e "  ${GREEN}API Documentation:${NC}"
 echo "    ${API_ENDPOINT}docs"
 echo ""
 
-echo -e "${CYAN}🗄️ Database:${NC}"
+echo -e "${CYAN}🗄️ PostgreSQL Database (Public Access):${NC}"
 echo ""
-echo "  PostgreSQL: $DB_ENDPOINT:5432"
-echo "  Database: finadvisor"
-echo "  User: postgres"
+echo "  Endpoint:  $DB_ENDPOINT"
+echo "  Port:      5432"
+echo "  Database:  finadvisor"
+echo "  User:      postgres"
+echo "  Password:  $DB_PASSWORD"
 echo ""
-echo "  Redis: $REDIS_ENDPOINT:$REDIS_PORT"
+echo -e "${YELLOW}  🔓 Configurado con acceso público para debugging${NC}"
+echo ""
+
+echo -e "${CYAN}🔴 Redis Cache (Public Access):${NC}"
+echo ""
+echo "  Endpoint:  $REDIS_ENDPOINT"
+echo "  Port:      $REDIS_PORT"
+echo ""
+echo -e "${YELLOW}  🔓 Configurado con acceso público para debugging${NC}"
 echo ""
 
 echo -e "${CYAN}📊 Seed Data Loaded:${NC}"
@@ -401,75 +494,127 @@ echo "  ✓ Clients (from data/clients.csv)"
 echo "  ✓ Portfolios (from data/portfolios.csv)"
 echo ""
 
-echo -e "${CYAN}🚀 Next Steps:${NC}"
+echo -e "${CYAN}🚀 Acceso Rápido:${NC}"
 echo ""
 
 if [ -n "$FRONTEND_URL" ]; then
-    echo "  1. Open the Streamlit frontend:"
+    echo -e "  ${GREEN}1. Abrir Streamlit:${NC}"
     echo "     $FRONTEND_URL"
     echo ""
-    echo "  2. Select a client (CLI001, CLI002, CLI003, CLI004)"
-    echo ""
-    echo "  3. Click 'Cargar Perfil'"
-    echo ""
-    echo "  4. Start chatting: 'que productos me puedes recomendar'"
 else
-    echo "  1. Access the API at:"
-    echo "     $API_ENDPOINT"
-    echo ""
-    echo "  2. Test with curl:"
-    echo "     curl $API_ENDPOINT/health"
-    echo ""
-    echo "  3. For Streamlit, run locally and point to API:"
+    echo -e "  ${YELLOW}ℹ️  Frontend (Streamlit) no desplegado en este stack${NC}"
+    echo "     Para usar la aplicación web, ejecuta localmente:"
     echo "     API_ENDPOINT=$API_ENDPOINT streamlit run frontend/app.py"
+    echo ""
 fi
 
+echo -e "  ${GREEN}2. Conectar a PostgreSQL desde tu máquina:${NC}"
+echo "     PGPASSWORD='$DB_PASSWORD' psql -h $DB_ENDPOINT -U postgres -d finadvisor"
 echo ""
-echo -e "${CYAN}🔧 Useful Commands:${NC}"
+echo -e "  ${GREEN}3. Conectar a Redis desde tu máquina:${NC}"
+echo "     redis-cli -h $REDIS_ENDPOINT -p $REDIS_PORT"
 echo ""
-echo "  View logs:"
+
+echo -e "${CYAN}🔍 Verificar Datos Cargados:${NC}"
+echo ""
+echo "  Verificar productos en PostgreSQL:"
+echo "    PGPASSWORD='$DB_PASSWORD' psql -h $DB_ENDPOINT -U postgres -d finadvisor -c 'SELECT COUNT(*) FROM products;'"
+echo ""
+echo "  Verificar clientes:"
+echo "    PGPASSWORD='$DB_PASSWORD' psql -h $DB_ENDPOINT -U postgres -d finadvisor -c 'SELECT COUNT(*) FROM clients;'"
+echo ""
+echo "  Verificar Redis:"
+echo "    redis-cli -h $REDIS_ENDPOINT -p $REDIS_PORT ping"
+echo ""
+
+echo -e "${CYAN}🔧 Comandos Útiles:${NC}"
+echo ""
+echo "  Ver logs de Lambda:"
 echo "    aws logs tail /aws/lambda/${STACK_NAME}-OrchestratorLambda --follow --profile $PROFILE --region $AWS_REGION"
 echo ""
-echo "  Connect to database:"
-echo "    PGPASSWORD='$DB_PASSWORD' psql -h $DB_ENDPOINT -U postgres -d finadvisor"
-echo ""
-echo "  Update stack:"
+echo "  Actualizar stack:"
 echo "    ./scripts/deploy_cloud.sh"
 echo ""
-echo "  Destroy stack:"
+echo "  Destruir stack:"
 echo "    cd infra && cdk destroy $STACK_NAME --profile $PROFILE --region $AWS_REGION"
 echo ""
 
 # Save outputs to file
 cat > deployment-info.txt <<EOF
-FinAdvisor AWS Deployment
-========================
+╔════════════════════════════════════════════════════════════╗
+║              FinAdvisor - AWS Deployment Info              ║
+╚════════════════════════════════════════════════════════════╝
 
 Deployment Date: $(date)
 Stack Name: $STACK_NAME
 Region: $AWS_REGION
 Account: $ACCOUNT_ID
 
-Service Endpoints
------------------
-Frontend: $FRONTEND_URL
+🌐 Service Endpoints
+--------------------
+Frontend (Streamlit): ${FRONTEND_URL:-No disponible - ejecutar localmente}
 Backend API: $API_ENDPOINT
-API Docs: ${API_ENDPOINT}docs
+API Documentation: ${API_ENDPOINT}docs
 
-Database
---------
-PostgreSQL: $DB_ENDPOINT:5432
+🗄️ PostgreSQL Database (Public Access)
+--------------------------------------
+Endpoint: $DB_ENDPOINT
+Port: 5432
 Database: finadvisor
 User: postgres
-Password: [See Secrets Manager: $DB_SECRET_ARN]
+Password: $DB_PASSWORD
 
-Redis: $REDIS_ENDPOINT:$REDIS_PORT
+⚠️ NOTA: Configurado con acceso público para debugging
 
-Seed Data
----------
+🔴 Redis Cache (Public Access)
+------------------------------
+Endpoint: $REDIS_ENDPOINT
+Port: $REDIS_PORT
+
+⚠️ NOTA: Configurado con acceso público para debugging
+
+📊 Seed Data Loaded
+-------------------
 ✓ Products loaded from data/products.csv
 ✓ Clients loaded from data/clients.csv
 ✓ Portfolios loaded from data/portfolios.csv
+
+🚀 Acceso Rápido (Copy & Paste)
+-------------------------------
+
+1. Abrir Streamlit:
+   ${FRONTEND_URL:-API_ENDPOINT=$API_ENDPOINT streamlit run frontend/app.py}
+
+2. Conectar a PostgreSQL desde tu máquina:
+   PGPASSWORD='$DB_PASSWORD' psql -h $DB_ENDPOINT -U postgres -d finadvisor
+
+3. Conectar a Redis desde tu máquina:
+   redis-cli -h $REDIS_ENDPOINT -p $REDIS_PORT
+
+🔍 Verificar Datos Cargados
+---------------------------
+
+Verificar productos en PostgreSQL:
+  PGPASSWORD='$DB_PASSWORD' psql -h $DB_ENDPOINT -U postgres -d finadvisor -c 'SELECT COUNT(*) FROM products;'
+
+Verificar clientes:
+  PGPASSWORD='$DB_PASSWORD' psql -h $DB_ENDPOINT -U postgres -d finadvisor -c 'SELECT COUNT(*) FROM clients;'
+
+Verificar Redis:
+  redis-cli -h $REDIS_ENDPOINT -p $REDIS_PORT ping
+
+🔧 Comandos Útiles
+------------------
+
+Ver logs de Lambda:
+  aws logs tail /aws/lambda/${STACK_NAME}-OrchestratorLambda --follow --profile $PROFILE --region $AWS_REGION
+
+Actualizar stack:
+  ./scripts/deploy_cloud.sh
+
+Destruir stack:
+  cd infra && cdk destroy $STACK_NAME --profile $PROFILE --region $AWS_REGION
+
 EOF
 
 echo -e "${GREEN}✓ Deployment info saved to: deployment-info.txt${NC}"

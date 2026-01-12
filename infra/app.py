@@ -4,18 +4,18 @@ CDK App for FinAdvisor
 Instantiates the main stack
 """
 
-from aws_cdk import core
+import aws_cdk as cdk
 from cdk_stack import FinAdvisorStack
 
-app = core.App()
+app = cdk.App()
 
 FinAdvisorStack(
     app,
-    "FinAdvisorStack",
+    "FinAdvisorStack6",
     description="FinAdvisor - AI-Powered Financial Advisory Agent on AWS",
-    env=core.Environment(
-        account=core.Aws.ACCOUNT_ID,
-        region=core.Aws.REGION,
+    env=cdk.Environment(
+        account=cdk.Aws.ACCOUNT_ID,
+        region=cdk.Aws.REGION,
     ),
 )
 

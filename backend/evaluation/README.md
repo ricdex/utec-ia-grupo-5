@@ -235,6 +235,54 @@ Verificar que:
 - Base de datos está seeded (`make seed`)
 - Archivo `.env` está configurado
 
+## 🔥 NUEVO: Tracing en Tiempo Real (Producción)
+
+El sistema ahora soporta **tracing de LangSmith en producción** para monitoreo continuo.
+
+### Habilitar Tracing en Local
+
+```bash
+# En tu .env
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_your-api-key
+LANGCHAIN_PROJECT=finadvisor-local
+
+# Levantar servicios
+make up
+
+# Todas las interacciones se registrarán en LangSmith automáticamente
+```
+
+### Habilitar Tracing en Cloud (AWS)
+
+```bash
+# Antes de deploy
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=lsv2_pt_your-api-key
+export LANGCHAIN_PROJECT=finadvisor-cloud
+
+# Deploy (las env vars se pasan al Lambda)
+make deploy-aws
+```
+
+### Habilitar Judge en Tiempo Real (EXPERIMENTAL)
+
+⚠️ **ADVERTENCIA**: Esto duplica las llamadas LLM, aumentando costo y latencia.
+
+```bash
+# Solo para testing/debugging
+ENABLE_JUDGE_EVAL=true
+
+# El judge evaluará cada respuesta automáticamente y lo registrará en LangSmith
+```
+
+### Ver Trazas en LangSmith
+
+1. Ir a https://smith.langchain.com
+2. Seleccionar proyecto (ej: "finadvisor-local")
+3. Ver todas las interacciones en tiempo real
+4. Analizar latencias, tokens, errores
+
 ## Integración CI/CD
 
 Agregar a GitHub Actions:
@@ -269,8 +317,7 @@ jobs:
 - `llm_judge.py`: LLM-as-judge para explainability (Claude)
 - `dataset.json`: Dataset completo (30 casos de prueba)
 - `run_evaluation.py`: Script principal de ejecución
-- `README.md`: Este archivo
-- `QUICK_START.md`: Guía rápida de inicio
+- `README.md`: Este archivo (incluye guía de inicio rápido)
 - `LLM_JUDGE.md`: Documentación del LLM judge
 
 ## Referencias

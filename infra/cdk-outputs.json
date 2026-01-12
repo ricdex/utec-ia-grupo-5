@@ -1,0 +1,56 @@
+[
+    {
+        "OutputKey": "RedisEndpoint",
+        "OutputValue": "fin-fi-iq8kdvh4yna8.sog2hx.0001.use1.cache.amazonaws.com",
+        "Description": "ElastiCache Redis Endpoint (STM)"
+    },
+    {
+        "OutputKey": "FinAdvisorApiEndpointCB4FCF04",
+        "OutputValue": "https://15cnhh5rhk.execute-api.us-east-1.amazonaws.com/prod/"
+    },
+    {
+        "OutputKey": "RedisPort",
+        "OutputValue": "6379",
+        "Description": "ElastiCache Redis Port"
+    },
+    {
+        "OutputKey": "DataBucketName",
+        "OutputValue": "finadvisorstack6-finadvisordata2108a065-vcb3021a7wty",
+        "Description": "S3 Data Bucket"
+    },
+    {
+        "OutputKey": "DbEndpoint",
+        "OutputValue": "finadvisorstack6-finadvisordb66cf7bbb-y5j988omfpd8.clsmg9yrqa74.us-east-1.rds.amazonaws.com",
+        "Description": "RDS PostgreSQL Endpoint (LTM)"
+    },
+    {
+        "OutputKey": "BedrockGuardrailId",
+        "OutputValue": "phppousbt0ei",
+        "Description": "Bedrock Guardrail ID for financial compliance"
+    },
+    {
+        "OutputKey": "DbSecretArn",
+        "OutputValue": "arn:aws:secretsmanager:us-east-1:469132838286:secret:FinAdvisorDbSecretA3910BF5-DVgmfFu6ttxP-iVO5IS",
+        "Description": "Database credentials secret ARN"
+    },
+    {
+        "OutputKey": "BedrockGuardrailArn",
+        "OutputValue": "arn:aws:bedrock:us-east-1:469132838286:guardrail/phppousbt0ei",
+        "Description": "Bedrock Guardrail ARN"
+    },
+    {
+        "OutputKey": "ApiEndpoint",
+        "OutputValue": "https://15cnhh5rhk.execute-api.us-east-1.amazonaws.com/prod/",
+        "Description": "API Gateway Endpoint"
+    },
+    {
+        "OutputKey": "BackendEcrRepo",
+        "OutputValue": "469132838286.dkr.ecr.us-east-1.amazonaws.com/finadvisor-backend",
+        "Description": "Backend ECR Repository URI"
+    },
+    {
+        "OutputKey": "FrontendEcrRepo",
+        "OutputValue": "469132838286.dkr.ecr.us-east-1.amazonaws.com/finadvisor-frontend",
+        "Description": "Frontend ECR Repository URI"
+    }
+]

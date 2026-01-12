@@ -65,7 +65,7 @@ class AnthropicLLMProvider(LLMProvider):
 
 
 class BedrockLLMProvider(LLMProvider):
-    """AWS Bedrock provider for Claude models"""
+    """AWS Bedrock provider for Claude and Llama models"""
 
     def __init__(self, region: Optional[str] = None):
         import boto3
@@ -82,35 +82,82 @@ class BedrockLLMProvider(LLMProvider):
         messages: List[Dict],
         tools: Optional[List[Dict]] = None
     ) -> Any:
-        """Create message with Bedrock API"""
+        """Create message with Bedrock API - supports Claude and Llama"""
         import json
 
-        # Bedrock expects a different message format
-        body = {
-            "anthropic_version": "bedrock-2023-06-01",
-            "max_tokens": max_tokens,
-            "system": system,
-            "messages": messages
-        }
+        # Detect model type
+        is_llama = "llama" in model.lower() or "meta." in model.lower()
 
-        if tools:
-            body["tools"] = tools
+        if is_llama:
+            # Llama 3.3 format - convert messages to prompt format
+            prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system}<|eot_id|>"
 
-        response = self.client.invoke_model(
-            modelId=model,
-            body=json.dumps(body)
-        )
+            for msg in messages:
+                role = msg.get("role")
+                content = msg.get("content")
 
-        # Parse response
-        result = json.loads(response["body"].read())
+                # Handle string content
+                if isinstance(content, str):
+                    prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
+                # Handle list content (tool results, etc.) - convert to string
+                elif isinstance(content, list):
+                    content_str = "\n".join([
+                        item.get("text", "") if isinstance(item, dict) and "text" in item
+                        else str(item) for item in content
+                    ])
+                    prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content_str}<|eot_id|>"
 
-        # Wrap in Anthropic-like response object for compatibility
-        class BedrockResponse:
-            def __init__(self, data):
-                self.content = data.get("content", [])
-                self.stop_reason = data.get("stop_reason", "end_turn")
+            # Add assistant header for response
+            prompt += "<|start_header_id|>assistant<|end_header_id|>"
 
-        return BedrockResponse(result)
+            body = {
+                "prompt": prompt,
+                "max_gen_len": max_tokens,
+                "temperature": 0.7,
+                "top_p": 0.9
+            }
+
+            response = self.client.invoke_model(
+                modelId=model,
+                body=json.dumps(body)
+            )
+
+            result = json.loads(response["body"].read())
+
+            # Convert Llama response to Claude-like format
+            class BedrockResponse:
+                def __init__(self, data):
+                    generation = data.get("generation", "")
+                    self.content = [{"type": "text", "text": generation}]
+                    self.stop_reason = "end_turn"
+
+            return BedrockResponse(result)
+        else:
+            # Claude format
+            body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": max_tokens,
+                "system": system,
+                "messages": messages
+            }
+
+            if tools:
+                body["tools"] = tools
+
+            response = self.client.invoke_model(
+                modelId=model,
+                body=json.dumps(body)
+            )
+
+            result = json.loads(response["body"].read())
+
+            # Wrap in Anthropic-like response object for compatibility
+            class BedrockResponse:
+                def __init__(self, data):
+                    self.content = data.get("content", [])
+                    self.stop_reason = data.get("stop_reason", "end_turn")
+
+            return BedrockResponse(result)
 
 
 class OpenAILLMProvider(LLMProvider):

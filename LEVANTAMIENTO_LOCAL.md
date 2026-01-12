@@ -1,13 +1,13 @@
-# 🚀 Levantamiento Local con Docker + OpenAI
+# 🚀 Levantamiento Local con Docker
 
-Todo corre en Docker. Solo necesitas tu **OpenAI API Key** para empezar.
+Todo corre en Docker. Puedes usar **OpenAI** (recomendado y más barato) o **AWS Bedrock con Claude**.
 
 ---
 
 ## ✅ Pre-requisitos
 
 - **Docker Desktop** instalado y corriendo
-- **OpenAI API Key**: Obtén una en https://platform.openai.com/api-keys
+- **API Key de LLM**: OpenAI o AWS Bedrock (ver configuración abajo)
 - 4GB RAM disponible
 - Puertos libres: 5432 (PostgreSQL), 6379 (Redis), 8000 (Backend), 8501 (Frontend)
 
@@ -15,19 +15,58 @@ Todo corre en Docker. Solo necesitas tu **OpenAI API Key** para empezar.
 
 ## 🏃 Quick Start (3 Pasos)
 
-### 1. Configura tu API Key
+### 1. Crea tu archivo de configuración
 
 ```bash
-# El archivo .env ya está listo, solo agrega tu key
-nano .env
+# Crea .env.local.local desde el template
+make env
 
-# Reemplaza esta línea:
-# OPENAI_API_KEY=sk-proj-XXXXXXXX...
-# Con tu key real:
+# Esto crea:
+# - .env.local.local (para desarrollo local)
+# - .env.local.cloud (para despliegue AWS - ignorar por ahora)
+```
+
+### 2. Configura tu API Key
+
+Edita `.env.local.local` y elige una opción:
+
+**OPCIÓN A: OpenAI (recomendado para local - más barato)**
+```bash
+nano .env.local.local
+
+# Configuración:
+MODEL_PROVIDER=openai
+MODEL_NAME=gpt-4o-mini
 OPENAI_API_KEY=sk-proj-tu-api-key-real-aqui
 ```
 
-### 2. Levanta todos los servicios
+Obtén tu OpenAI API Key en: https://platform.openai.com/api-keys
+
+**OPCIÓN B: AWS Bedrock (con credenciales temporales)**
+```bash
+nano .env.local.local
+
+# Configuración:
+MODEL_PROVIDER=bedrock
+MODEL_NAME=anthropic.claude-3-5-sonnet-20241022-v2:0
+
+AWS_ACCESS_KEY_ID=tu-access-key-temporal
+AWS_SECRET_ACCESS_KEY=tu-secret-key-temporal
+AWS_SESSION_TOKEN=tu-session-token-temporal  # ⚠️ IMPORTANTE para credenciales temporales
+AWS_REGION=us-east-1
+```
+
+**OPCIÓN C: Anthropic Claude Direct API**
+```bash
+nano .env.local.local
+
+# Configuración:
+MODEL_PROVIDER=anthropic
+MODEL_NAME=claude-3-5-sonnet-20241022
+ANTHROPIC_API_KEY=sk-ant-tu-api-key-aqui
+```
+
+### 3. Levanta todos los servicios
 
 ```bash
 make quick-start
@@ -39,7 +78,7 @@ Esto ejecuta automáticamente:
 3. ✅ Inicializa base de datos con productos y clientes desde CSV
 4. ✅ Listo en ~2 minutos ⚡
 
-### 3. Abre la aplicación
+### 4. Abre la aplicación
 
 **Frontend (Streamlit):**
 ```
@@ -179,7 +218,7 @@ WHERE c.client_id = 'CLI001';
 
 ### Cambiar Modelo de OpenAI
 
-Edita `.env`:
+Edita `.env.local`:
 ```bash
 # Usar GPT-4o (más potente, más caro)
 MODEL_NAME=gpt-4o
@@ -198,7 +237,7 @@ make docker-restart
 
 ### Usar Anthropic Claude Directo
 
-Edita `.env`:
+Edita `.env.local`:
 ```bash
 # Comenta OpenAI
 # OPENAI_API_KEY=sk-proj-...
@@ -216,9 +255,51 @@ make docker-restart
 
 ### Configurar Timeouts
 
-Si ves errores de timeout, aumenta el límite en `.env`:
+Si ves errores de timeout, aumenta el límite en `.env.local`:
 ```bash
 API_TIMEOUT=60  # De 30 a 60 segundos
+```
+
+### Habilitar Trazabilidad con LangSmith
+
+LangSmith te permite monitorear y debuggear las conversaciones del agente en tiempo real.
+
+**Beneficios:**
+- 📊 Ver todas las llamadas al LLM (input/output)
+- ⏱️ Medir tiempos de respuesta
+- 💰 Rastrear tokens consumidos
+- 🐛 Debuggear errores y excepciones
+- 🔍 Analizar cadenas de razonamiento del agente
+
+**Configuración:**
+
+1. Crea una cuenta en https://smith.langchain.com
+
+2. Obtén tu API key en: https://smith.langchain.com/settings
+
+3. Agrega a `.env.local`:
+```bash
+LANGCHAIN_API_KEY=lsv2_pt_tu-api-key-aqui
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_PROJECT=finadvisor-local
+```
+
+4. Reinicia los servicios:
+```bash
+make docker-restart
+```
+
+5. Abre el dashboard: https://smith.langchain.com
+
+6. Realiza algunas conversaciones y verás las trazas en tiempo real
+
+**Comandos útiles:**
+```bash
+# Verificar configuración de LangSmith
+make eval-status
+
+# Correr evaluación rápida (opcional)
+make eval-quick
 ```
 
 ---
@@ -227,12 +308,12 @@ API_TIMEOUT=60  # De 30 a 60 segundos
 
 ### Error: "OPENAI_API_KEY environment variable not set"
 
-**Causa:** No configuraste tu API key en `.env`
+**Causa:** No configuraste tu API key en `.env.local`
 
 **Solución:**
 ```bash
-# Edita .env y agrega tu key
-nano .env
+# Edita .env.local y agrega tu key
+nano .env.local
 # Cambia: OPENAI_API_KEY=sk-proj-XXXXXXXX
 # Por:    OPENAI_API_KEY=sk-proj-tu-key-real
 
